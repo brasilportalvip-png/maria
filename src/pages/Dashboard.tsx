@@ -58,7 +58,7 @@ export const Dashboard: React.FC = () => {
         </button>
 
         <p className="mt-4 text-xs text-gray-500">
-          Cada pergunta consome 3 créditos.
+          Cada pergunta/consulta consome 5 créditos.
         </p>
       </motion.div>
     </div>

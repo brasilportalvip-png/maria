@@ -11,6 +11,10 @@ import {
   LogIn,
   User
 } from 'lucide-react';
+import {
+  ORACLE_QUESTION_COST,
+  INSUFFICIENT_CREDITS_MESSAGE,
+} from '../config/pricing';
 
 interface ChatMessage {
   id: string;
@@ -31,7 +35,7 @@ export const Chat: React.FC = () => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const CREDIT_COST = 3;
+  const CREDIT_COST = ORACLE_QUESTION_COST; // 5 créditos
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,7 +53,7 @@ export const Chat: React.FC = () => {
     }
 
     if (user.credits < CREDIT_COST) {
-      setErrorMsg('Você precisa de 3 créditos para enviar uma pergunta.');
+      setErrorMsg(INSUFFICIENT_CREDITS_MESSAGE);
       return;
     }
 
@@ -108,7 +112,7 @@ export const Chat: React.FC = () => {
         title: 'Consulta no Reino de Maria Padilha',
         date: new Date().toISOString(),
         content: data.reply,
-        creditsUsed: CREDIT_COST,
+        creditsUsed: data.creditsCost !== undefined ? data.creditsCost : CREDIT_COST,
       });
     } catch (err: any) {
       setErrorMsg(err.message || 'Não foi possível concluir esta consulta agora. Tente novamente.');

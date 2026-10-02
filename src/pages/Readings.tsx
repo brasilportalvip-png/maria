@@ -6,6 +6,10 @@ import {
   Compass, Coins, Calendar, User, FileText, ChevronRight, HelpCircle, Check, Printer, ArrowLeft, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import { ReadingViewer } from '../components/ReadingViewer';
+import {
+  READING_CONSULTATION_COST,
+  INSUFFICIENT_CREDITS_MESSAGE,
+} from '../config/pricing';
 
 export const Readings: React.FC = () => {
   const { user, history, apiFetch, setUserCredits, addHistoryItem } = useApp();
@@ -43,49 +47,49 @@ export const Readings: React.FC = () => {
       id: 'odu',
       title: 'Odù Ifá Regente',
       desc: 'Descubra qual Odù de nascimento rege seus caminhos espirituais atuais.',
-      cost: 1,
+      cost: READING_CONSULTATION_COST,
       icon: '✨'
     },
     {
       id: 'buzios',
       title: 'Jogo de Búzios',
       desc: 'Consulta às conchas sagradas e revelação da influência dos Orixás.',
-      cost: 1,
+      cost: READING_CONSULTATION_COST,
       icon: '🐚'
     },
     {
       id: 'tarot',
       title: 'Tarot das Três Cartas',
       desc: 'Visualização completa do passado, presente e tendências futuras.',
-      cost: 1,
+      cost: READING_CONSULTATION_COST,
       icon: '🃏'
     },
     {
       id: 'numerology',
       title: 'Numerologia da Alma',
       desc: 'Mapa numérico completo com sua missão de vida e desafios cármicos.',
-      cost: 1,
+      cost: READING_CONSULTATION_COST,
       icon: '🔢'
     },
     {
       id: 'cabala',
       title: 'Cabala e Anjo Guardião',
       desc: 'Sua esfera na Árvore da Vida, Arcanjo regente e anjo protetor.',
-      cost: 1,
+      cost: READING_CONSULTATION_COST,
       icon: '🌌'
     },
     {
       id: 'astrology',
       title: 'Astrologia e Horário Planetário',
       desc: 'Fase da lua regente, horário planetário e seu impacto astral.',
-      cost: 1,
+      cost: READING_CONSULTATION_COST,
       icon: '🌙'
     },
     {
       id: 'premium_complete',
       title: 'Grande Consulta Premium',
       desc: 'A leitura definitiva integrando Tarot, Odù Ifá, Búzios, Numerologia Cabalística, Astrologia Cósmica, Síntese de Maria Padilha e Ritual Personalizado.',
-      cost: 3,
+      cost: READING_CONSULTATION_COST,
       icon: '👑',
       badge: 'MAIS PROCURADO'
     }
@@ -96,7 +100,7 @@ export const Readings: React.FC = () => {
     setErrorMsg('');
 
     if (user.credits < cost) {
-      setErrorMsg(`Créditos insuficientes! Você precisa de pelo menos ${cost} créditos para esta leitura espiritual.`);
+      setErrorMsg(INSUFFICIENT_CREDITS_MESSAGE);
       return;
     }
 

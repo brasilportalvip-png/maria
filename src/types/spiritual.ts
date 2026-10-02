@@ -258,3 +258,89 @@ export interface CreditPlan {
   badge?: string;
   color: string;
 }
+
+export const ORACLE_QUESTION_COST = 5;
+export const ORACLE_FOLLOWUP_COST = 5;
+export const POMBO_GIRA_ADVICE_COST = 5;
+export const READING_CONSULTATION_COST = 5;
+export const LOVE_COMPATIBILITY_COST = 5;
+export const FREE_GREETING_SUPPORT_COST = 0;
+
+export interface PermanentSpiritualProfile {
+  uid: string;
+  natalProfileVersion: number;
+  natalSignature: string; // Hash of fullName + birthDate + birthTime + city
+  numerology: {
+    lifePath: number;
+    expression: number;
+    soulUrge: number;
+    karmicLessons: number[];
+    personalYear: number;
+    summary: string;
+  };
+  cabala: {
+    sephirahNumber: number;
+    sephirahName: string;
+    divineAttribute: string;
+    rulingArchangel: string;
+    guardianAngelName: string;
+    guardianAngelChoir: string;
+    virtue: string;
+    spiritualGuidance: string;
+  };
+  astrology: {
+    sunSign: string;
+    element: string;
+    rulingPlanet: string;
+    lunarPhase: string;
+    planetaryHour: string;
+    astrologicalGuidance: string;
+  };
+  karmicPatterns: {
+    karmicLessons: string[];
+    soulMission: string;
+    relationshipDynamic: string;
+  };
+  spiritualCycles: {
+    personalYear: number;
+    cycleTheme: string;
+    spiritualPhase: string;
+  };
+  archetypes: {
+    primaryArchetype: string;
+    shadowArchetype: string;
+    pomboGiraAffinity: string;
+  };
+  recurrentLessons: string[];
+  reincarnationThemes: string[];
+  personalityPatterns: string[];
+  relationshipPatterns: string[];
+  spiritualStrengths: string[];
+  spiritualChallenges: string[];
+  updatedAt: string;
+  methodVersions: Record<string, string>;
+}
+
+export interface LivingSpiritualHistory {
+  uid: string;
+  recurringThemes: string[];
+  importantRelations: Array<{
+    name: string;
+    relationship: string;
+    notes?: string;
+    updatedAt: string;
+  }>;
+  reportedEvents: Array<{
+    event: string;
+    date: string;
+  }>;
+  previousReadings: Array<{
+    id: string;
+    date: string;
+    oracleType: string;
+    summary: string;
+  }>;
+  lifeShifts: string[];
+  perceivedPatterns: string[];
+  updatedAt: string;
+}

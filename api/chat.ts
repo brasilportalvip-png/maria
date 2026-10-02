@@ -11,6 +11,16 @@ import { drawTarotCards } from '../src/oraculos/tarotEngine.js';
 import { saveOracleReading } from '../src/oraculos/readingStorage.js';
 import { logger } from './services/logger.js';
 import type { NatalData, OracleReadingRecord } from '../src/types/spiritual.js';
+import {
+  ORACLE_QUESTION_COST,
+  ORACLE_FOLLOWUP_COST,
+  FREE_GREETING_SUPPORT_COST,
+  INSUFFICIENT_CREDITS_MESSAGE,
+} from '../src/config/pricing.js';
+import {
+  assembleSpiritualAIContext,
+  recordSpiritualEvent,
+} from './services/spiritualProfileService.js';
 
 export type ChatMessageType = 'CONVERSATION' | 'SUPPORT' | 'ORACLE_QUESTION' | 'ORACLE_FOLLOWUP';
 
@@ -95,14 +105,20 @@ export default async function handler(req: Request, res: Response) {
   // 1. Classify Message Type: CONVERSATION, SUPPORT, ORACLE_QUESTION, ORACLE_FOLLOWUP
   const messageType = classifyChatMessageType(message, history?.length || 0);
 
-  // Determine explicit credit cost:
-  // - SUPPORT: 0 credits (help, pricing, info)
-  // - CONVERSATION: 0 credits (courtesy greeting)
-  // - ORACLE_FOLLOWUP: 1 credit
-  // - ORACLE_QUESTION / Pombo Gira advice: 1 credit
-  let requiredCredits = 0;
+  // REGRA DO PROPRIETÁRIO:
+  // - SUPPORT / CONVERSATION: 0 créditos
+  // - ORACLE_QUESTION / ORACLE_FOLLOWUP / Pombo Gira advice: EXATAMENTE 5 CRÉDITOS
+  let requiredCredits = FREE_GREETING_SUPPORT_COST;
   if (messageType === 'ORACLE_QUESTION' || messageType === 'ORACLE_FOLLOWUP') {
-    requiredCredits = 1;
+    requiredCredits = ORACLE_QUESTION_COST; // 5 créditos
+  }
+
+  // Pre-check balance before any operations
+  if (requiredCredits > 0 && user.credits < requiredCredits) {
+    return res.status(402).json({
+      error: INSUFFICIENT_CREDITS_MESSAGE,
+      code: 'INSUFFICIENT_CREDITS',
+    });
   }
 
   // 2. Prepare Context (Temporal, Intent, Natal, Repetition)
@@ -123,9 +139,9 @@ export default async function handler(req: Request, res: Response) {
   if (requiredCredits === 0) {
     let supportText = '';
     if (messageType === 'SUPPORT') {
-      supportText = `🌹 Olá, ${user.fullName || 'Consulente'}. O Reino de Maria Padilha oferece planos acessíveis de créditos para suas consultas aos oráculos sagrados (Tarot de 78 cartas, Jogo de Búzios, Odù Ifá, Numerologia, Cabala e Astrologia). Você pode adquirir créditos na aba "Comprar Créditos" a partir de R$ 50 (30 créditos). Suas consultas e histórico ficam salvos em segurança em sua conta.`;
+      supportText = `🌹 Olá, ${user.fullName || 'Consulente'}. O Reino de Maria Padilha oferece planos acessíveis de créditos para suas consultas aos oráculos sagrados (Tarot de 78 cartas, Jogo de Búzios, Odù Ifá, Numerologia, Cabala e Astrologia). Cada consulta aos oráculos custa exatamente 5 créditos. Você pode adquirir créditos na aba "Comprar Créditos" a partir de R$ 50 (30 créditos). Suas consultas e histórico ficam salvos em segurança em sua conta.`;
     } else {
-      supportText = `🌹 Laroyé, ${user.fullName || 'irmão(ã) de caminhada'}. ${temporal.greeting}! ${activeName} saúda teus passos com respeito e firmeza. Quando desejar abrir teus caminhos ou consultar os oráculos, faça tua pergunta com clareza no coração.`;
+      supportText = `🌹 Laroyé, ${user.fullName || 'irmão(ã) de caminhada'}. ${temporal.greeting}! ${activeName} saúda teus passos com respeito e firmeza. Quando desejar abrir teus caminhos ou consultar os oráculos, faça tua pergunta com clareza no coração (cada consulta oracular utiliza 5 créditos).`;
     }
 
     return res.status(200).json({
@@ -138,7 +154,7 @@ export default async function handler(req: Request, res: Response) {
     });
   }
 
-  // 4. Debit credits for Oracle consultation
+  // 4. Debit credits for Oracle consultation (Authoritative 5 Credits)
   let debitResult: { success: boolean; newBalance: number; ledgerId: string };
   try {
     debitResult = await debitCredits({
@@ -151,7 +167,7 @@ export default async function handler(req: Request, res: Response) {
   } catch (err: any) {
     if (err.message === 'INSUFFICIENT_CREDITS') {
       return res.status(402).json({
-        error: `Créditos insuficientes. Você precisa de ${requiredCredits} crédito para esta consulta oracular.`,
+        error: INSUFFICIENT_CREDITS_MESSAGE,
         code: 'INSUFFICIENT_CREDITS',
       });
     }
@@ -169,6 +185,13 @@ export default async function handler(req: Request, res: Response) {
     };
   }
 
+  // 6. Assemble deep permanent spiritual profile & AI context
+  const spiritualContext = await assembleSpiritualAIContext({
+    user,
+    question: message,
+    rawOracleResult,
+  });
+
   const systemInstruction = `
 Você é ${activeName} falando como presença espiritual guardiã no Reino de Maria Padilha.
 Você conversa com o consulente trazendo leitura e orientação espiritual sobre a vida, sem prometer milagres instantâneos, sem prever fatalidades de saúde ou morte, e respeitando rigorosamente o livre-arbítrio.
@@ -176,6 +199,8 @@ ${rawOracleResult ? 'O sistema sorteou uma carta sagrada REAL para esta pergunta
 Fale com sabedoria, acolhimento, elegância, firmeza e verdade. Responda entre 150 e 400 palavras em português claro e inspirador.
 Saudação apropriada ao horário: "${temporal.greeting}".
 ${repetition.isRepeatedQuestion ? `Nota: ${repetition.adviceGuidance}` : ''}
+
+${spiritualContext.systemContext}
 `;
 
   try {
@@ -218,6 +243,12 @@ ${repetition.isRepeatedQuestion ? `Nota: ${repetition.adviceGuidance}` : ''}
       await saveOracleReading(readingRecord);
     }
 
+    recordSpiritualEvent({
+      uid: user.uid,
+      category: intent.primaryCategory,
+      summary: message.slice(0, 150),
+    }).catch(() => {});
+
     return res.status(200).json({
       reply: geminiResult.text,
       creditsCost: requiredCredits,
@@ -240,7 +271,7 @@ ${repetition.isRepeatedQuestion ? `Nota: ${repetition.adviceGuidance}` : ''}
     });
 
     return res.status(503).json({
-      error: 'Houve uma oscilação na conexão com a inteligência oracular. Seu crédito foi estornado integralmente para que você possa tentar novamente.',
+      error: 'Houve uma oscilação na conexão com a inteligência oracular. Seus créditos foram estornados integralmente para que você possa tentar novamente.',
       code: 'AI_TEMPORARILY_UNAVAILABLE',
       refunded: true,
       newCreditsBalance: debitResult.newBalance + requiredCredits,

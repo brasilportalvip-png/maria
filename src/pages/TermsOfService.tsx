@@ -52,10 +52,9 @@ export const TermsOfService: React.FC = () => {
           <section>
             <h2 className="font-serif text-base font-bold text-[#D4AF37] mb-2">2. Sistema de Créditos e Pagamentos</h2>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Cada pergunta no chat privado com Maria Padilha consome exatamente 3 créditos.</li>
-              <li>Consultas oraculares pontuais consom 1 crédito; a Grande Consulta Premium consome 3 créditos.</li>
+              <li>Cada pergunta ou consulta oracular paga (Chat com Maria Padilha, Tarot, Jogo de Búzios, Odù Ifá, Numerologia, Cabala, Astrologia, conselho de Pombo Gira ou Compatibilidade Amorosa) consome exatamente 5 créditos. Mensagens de simples atendimento, saudação ou suporte não consom créditos (0 créditos).</li>
               <li>A aquisição de créditos é realizada através de pacotes pré-pagos seguros processados pelo Mercado Pago.</li>
-              <li>Em caso de falha técnica comprovada no servidor ou indisponibilidade da IA durante uma consulta, o sistema efetua o estorno automático dos créditos debitados naquela transação.</li>
+              <li>Em caso de falha técnica comprovada no servidor ou indisponibilidade da IA durante uma consulta, o sistema efetua o estorno automático integral dos 5 créditos debitados naquela transação.</li>
             </ul>
           </section>
 

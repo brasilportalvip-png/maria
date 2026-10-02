@@ -92,7 +92,7 @@ export const CreditsStore: React.FC = () => {
 
         <p className="mx-auto mt-2 max-w-xl text-xs text-gray-300 md:text-sm">
           Escolha um plano e finalize o pagamento no checkout oficial do Mercado Pago.
-          Cada pergunta para Maria Padilha consome 3 créditos.
+          Cada pergunta/consulta oracular consome 5 créditos.
         </p>
 
         {user && (
@@ -165,7 +165,7 @@ export const CreditsStore: React.FC = () => {
                 </li>
                 <li className="flex items-center gap-1.5">
                   <Check className="h-3.5 w-3.5 text-green-500" />
-                  3 créditos por pergunta
+                  5 créditos por pergunta/consulta
                 </li>
                 <li className="flex items-center gap-1.5">
                   <Check className="h-3.5 w-3.5 text-green-500" />

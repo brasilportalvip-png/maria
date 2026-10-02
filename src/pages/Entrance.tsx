@@ -94,7 +94,7 @@ export const Entrance: React.FC = () => {
         </div>
 
         <p className="mt-5 text-xs font-mono text-[#D4AF37]">
-          ✨ Ganhe 07 créditos grátis no cadastro. Cada pergunta usa 3 créditos. ✨
+          ✨ Ganhe 07 créditos grátis no cadastro. Cada pergunta ou consulta usa 5 créditos. ✨
         </p>
 
         <div id="mp_disclaimer" className="mx-auto mt-7 max-w-lg border-t border-gray-800 pt-4 text-[11px] leading-normal text-gray-500">

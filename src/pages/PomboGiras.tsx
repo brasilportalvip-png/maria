@@ -4,6 +4,10 @@ import { generatePomboGiraNames, getPomboGiraDetails, MAJOR_POMBO_GIRAS } from '
 import { motion } from 'motion/react';
 import { Heart, Search, Sparkles, HelpCircle, AlertCircle, Coins, MessageSquare } from 'lucide-react';
 import { PomboGira } from '../types/spiritual';
+import {
+  POMBO_GIRA_ADVICE_COST,
+  INSUFFICIENT_CREDITS_MESSAGE,
+} from '../config/pricing';
 
 export const PomboGiras: React.FC = () => {
   const { user, apiFetch, setUserCredits, addHistoryItem } = useApp();
@@ -30,8 +34,8 @@ export const PomboGiras: React.FC = () => {
     if (!selectedPG || !user) return;
     setErrorMsg('');
 
-    if (user.credits < 1) {
-      setErrorMsg('Créditos insuficientes! Você precisa de pelo menos 1 crédito para receber um conselho canalizado inédito desta protetora.');
+    if (user.credits < POMBO_GIRA_ADVICE_COST) {
+      setErrorMsg(INSUFFICIENT_CREDITS_MESSAGE);
       return;
     }
 
@@ -60,7 +64,7 @@ export const PomboGiras: React.FC = () => {
         title,
         date: new Date().toISOString(),
         content: data.reply,
-        creditsUsed: 1,
+        creditsUsed: POMBO_GIRA_ADVICE_COST, // 5 créditos
       });
 
       setCustomAdvice(data.reply);
@@ -199,7 +203,7 @@ export const PomboGiras: React.FC = () => {
                         disabled={isLoadingAdvice}
                         className="w-full sm:w-auto px-6 py-2.5 rounded bg-gradient-to-r from-red-800 to-red-650 hover:from-red-700 hover:to-red-600 text-xs font-bold uppercase tracking-wider text-white border border-[#D4AF37]/40 shadow-md cursor-pointer transition-all hover:scale-103"
                       >
-                        {isLoadingAdvice ? 'Canalizando...' : 'Canalizar Conselho Inédito Exclusivo (1 Crédito)'}
+                        {isLoadingAdvice ? 'Canalizando...' : `Canalizar Conselho Inédito Exclusivo (${POMBO_GIRA_ADVICE_COST} Créditos)`}
                       </button>
                       <p className="text-[10px] text-gray-400 mt-2 font-mono">
                         Nossa IA espiritual irá canalizar uma resposta única baseada na sabedoria sagrada de {selectedPG.name}.

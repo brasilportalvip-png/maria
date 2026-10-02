@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { requireAuth, type AuthenticatedRequest } from './middleware/auth.js';
 import { OracleReadingRequestSchema } from './validation/schemas.js';
-import { debitCredits } from './services/creditService.js';
+import { debitCredits, refundCredits } from './services/creditService.js';
 import { executeGeminiWithFallback } from './services/geminiService.js';
 import { getTemporalContext } from '../src/oraculos/temporalEngine.js';
 import { classifyIntent } from '../src/oraculos/intentClassifier.js';
@@ -14,6 +14,14 @@ import { saveOracleReading, getOracleReadingById, getReadingIdByIdempotency } fr
 import { checkRateLimit } from './services/rateLimiter.js';
 import { logger } from './services/logger.js';
 import type { OracleReadingRecord, OracleRawResult, NatalData } from '../src/types/spiritual.js';
+import {
+  READING_CONSULTATION_COST,
+  INSUFFICIENT_CREDITS_MESSAGE,
+} from '../src/config/pricing.js';
+import {
+  assembleSpiritualAIContext,
+  recordSpiritualEvent,
+} from './services/spiritualProfileService.js';
 
 export default async function handler(req: Request, res: Response) {
   if (req.method !== 'POST') {
@@ -76,7 +84,16 @@ export default async function handler(req: Request, res: Response) {
     }
   }
 
-  const creditCost = type === 'premium_complete' ? 3 : 1;
+  // REGRA DO PROPRIETÁRIO: Cada consulta oracular paga custa exatamente 5 créditos
+  const creditCost = READING_CONSULTATION_COST; // 5 créditos
+
+  // Pre-check balance before execution
+  if (user.credits < creditCost) {
+    return res.status(402).json({
+      error: INSUFFICIENT_CREDITS_MESSAGE,
+      code: 'INSUFFICIENT_CREDITS',
+    });
+  }
 
   // 2. Debit Credits transactionally
   let debitResult: { success: boolean; newBalance: number; ledgerId: string };
@@ -91,7 +108,7 @@ export default async function handler(req: Request, res: Response) {
   } catch (err: any) {
     if (err.message === 'INSUFFICIENT_CREDITS') {
       return res.status(402).json({
-        error: `Créditos insuficientes! Você precisa de ${creditCost} ${creditCost === 1 ? 'crédito' : 'créditos'} para esta consulta.`,
+        error: INSUFFICIENT_CREDITS_MESSAGE,
         code: 'INSUFFICIENT_CREDITS',
       });
     }
@@ -164,13 +181,23 @@ export default async function handler(req: Request, res: Response) {
 
   const newReadingId = `read_${crypto.randomUUID()}`;
 
-  // 4. Gemini Interpretation of the REAL Oracle Result
+  // 4. Assemble deep permanent spiritual profile & AI context
+  const spiritualAI = await assembleSpiritualAIContext({
+    user,
+    question: userQuestion,
+    rawOracleResult: rawResult,
+    partnerData: specificName ? { name: specificName, birthDate: specificDate } : undefined,
+  });
+
+  // 5. Gemini Interpretation of the REAL Oracle Result
   const systemInstruction = `
 Você é Maria Padilha Rainha das 7 Encruzilhadas interpretando um sorteio sagrado real para o consulente.
 Aja com respeito, dignidade, sabedoria espiritual e livre-arbítrio.
 Você recebeu os resultados VERDADEIROS calculados pelo sistema. Não invente cartas nem búzios diferentes dos enviados.
 Explique o significado de cada carta/queda/número/esfera e sintetize uma orientação prática e espiritual.
 Use parágrafos claros, estruturados e respeitosos. Jamais faça previsões fatais de saúde ou morte.
+
+${spiritualAI.systemContext}
 `;
 
   let interpretationHtml = '';
@@ -225,6 +252,14 @@ Use parágrafos claros, estruturados e respeitosos. Jamais faça previsões fata
   };
 
   await saveOracleReading(readingRecord, idempotencyKey);
+
+  recordSpiritualEvent({
+    uid: user.uid,
+    category: type,
+    readingId: newReadingId,
+    summary: `${type}: ${userQuestion}`,
+    partnerName: specificName,
+  }).catch(() => {});
 
   return res.status(200).json({
     reading: interpretationHtml,
