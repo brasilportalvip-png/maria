@@ -19,10 +19,12 @@ try {
     adminAuthInstance = getAuth();
   }
 } catch (e) {
-  console.warn('[Firebase Admin] Service account not initialized or invalid, using fallback:', e);
+  console.warn('[Firebase Admin] Service account initialization error:', e);
 }
 
-// In-memory mock store for users & logs when Admin SDK is not connected
+const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+
+// In-memory mock store strictly isolated to automated tests (NODE_ENV === 'test')
 const memoryStore = new Map<string, Map<string, any>>();
 function getCollectionStore(name: string) {
   if (!memoryStore.has(name)) {
@@ -31,7 +33,7 @@ function getCollectionStore(name: string) {
   return memoryStore.get(name)!;
 }
 
-const mockFirestore = {
+const testMockFirestore = {
   collection: (colName: string) => {
     const store = getCollectionStore(colName);
     return {
@@ -84,14 +86,32 @@ const mockFirestore = {
   },
 };
 
-const mockAdminAuth = {
+const testMockAdminAuth = {
   createUser: async (userParams: any) => ({
     uid: 'usr_' + Math.random().toString(36).substring(2, 12),
     email: userParams.email,
     displayName: userParams.displayName,
   }),
+  verifyIdToken: async (token: string) => {
+    if (token.startsWith('test_token_')) {
+      const uid = token.replace('test_token_', '');
+      return { uid, email: `${uid}@portal.com`, admin: uid.includes('admin') };
+    }
+    throw new Error('Invalid token in test mock');
+  },
+  setCustomUserClaims: async () => {},
 };
 
-export const firestore = firestoreInstance || (mockFirestore as any);
-export const adminAuth = adminAuthInstance || (mockAdminAuth as any);
+export function assertFirebaseAdminReady(): void {
+  if (!firestoreInstance || !adminAuthInstance) {
+    if (isTestEnv) return;
+    const err = new Error('FIREBASE_ADMIN_UNAVAILABLE: O serviço de dados do Firebase Admin não está configurado.');
+    (err as any).statusCode = 503;
+    (err as any).code = 'SERVICE_UNAVAILABLE';
+    throw err;
+  }
+}
+
+export const firestore = firestoreInstance || (isTestEnv ? (testMockFirestore as any) : null);
+export const adminAuth = adminAuthInstance || (isTestEnv ? (testMockAdminAuth as any) : null);
 export const isFirebaseAdminActive = Boolean(firestoreInstance && adminAuthInstance);

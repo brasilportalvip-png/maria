@@ -29,7 +29,7 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useApp();
-  const isAdmin = user && (user.role === 'admin' || user.email === 'brasilportalvip@gmail.com');
+  const isAdmin = user && user.role === 'admin';
   return user && isAdmin ? <>{children}</> : <Navigate to="/chat" replace />;
 };
 

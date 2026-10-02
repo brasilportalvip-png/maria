@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { Heart, Coins, Calendar, User, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
 
 export const LoveCompatibility: React.FC = () => {
-  const { user, spendCredits } = useApp();
+  const { user, apiFetch, setUserCredits, addHistoryItem } = useApp();
   
   const [name1, setName1] = useState('');
   const [date1, setDate1] = useState('');
@@ -30,30 +30,37 @@ export const LoveCompatibility: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const res = await fetch('/api/reading', {
+      const res = await apiFetch('/api/reading', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'tarot', // We can proxy to tarot or generic oracle
+          type: 'tarot',
           userData: {
             fullName: name1,
             birthDate: date1
           },
           specificName: name2,
-          specificDate: date2
+          specificDate: date2,
+          question: `Sinastria e Compatibilidade Amorosa entre ${name1} e ${name2}`
         })
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro na consulta espiritual.');
 
-      // Spend Credits
-      const title = `Compatibilidade: ${name1} & ${name2}`;
-      const success = await spendCredits(2, 'compatibility', title, data.reading);
-      
-      if (!success) {
-        throw new Error('Falha ao debitar 2 créditos do portal.');
+      if (typeof data.newCreditsBalance === 'number') {
+        setUserCredits(data.newCreditsBalance);
       }
+
+      const title = `Compatibilidade: ${name1} & ${name2}`;
+      addHistoryItem({
+        id: `compat_${Date.now()}`,
+        userId: user.uid,
+        type: 'compatibility',
+        title,
+        date: new Date().toISOString(),
+        content: data.reading,
+        creditsUsed: 1,
+      });
 
       // Generate deterministic lovely scores based on names
       let h1 = 0, h2 = 0;

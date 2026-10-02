@@ -10,7 +10,7 @@ export const Header: React.FC = () => {
 
   if (!user) return null;
 
-  const isAdmin = user.role === 'admin' || user.email === 'brasilportalvip@gmail.com';
+  const isAdmin = user.role === 'admin';
 
   const handleLogout = async () => {
     await logout();

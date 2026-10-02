@@ -50,7 +50,7 @@ export default async function handler(req: Request, res: Response) {
     }
   }
 
-  const existingId = getReadingIdByIdempotency(idempotencyKey);
+  const existingId = await getReadingIdByIdempotency(user.uid, idempotencyKey);
   if (existingId) {
     const existing = await getOracleReadingById(existingId);
     if (existing) {
@@ -88,18 +88,34 @@ export default async function handler(req: Request, res: Response) {
   }
 
   // 3. Prepare Context & Real Oracle Execution
-  const userTimezone = userData?.timezone || user.timezone || 'America/Sao_Paulo';
+  const userTimezone = user.timezone || 'America/Sao_Paulo';
   const temporal = getTemporalContext(userTimezone);
   const userQuestion = question || `Consulta aos oráculos sagrados na modalidade ${type}`;
   const intent = classifyIntent(userQuestion, userTimezone);
 
+  // Authoritative consulente natal data from database ONLY (client cannot override)
   const natalSnapshot: NatalData = {
-    fullName: userData?.fullName || user.fullName,
-    birthDate: userData?.birthDate || user.birthDate,
-    birthTime: userData?.birthTime || user.birthTime,
-    city: userData?.city || user.city,
+    fullName: user.fullName || 'Consulente',
+    birthDate: user.birthDate || '',
+    birthTime: user.birthTime || '',
+    city: user.city || '',
     timezone: userTimezone,
   };
+
+  // Distinct participant structure for third parties (does not mutate consulente natal record)
+  if (specificName) {
+    const existingParticipant = intent.participants.find((p) => p.name.toLowerCase() === specificName.toLowerCase());
+    if (existingParticipant) {
+      if (specificDate && !existingParticipant.birthDate) existingParticipant.birthDate = specificDate;
+    } else {
+      intent.participants.push({
+        name: specificName,
+        birthDate: specificDate,
+        role: intent.isRomantic ? 'parceiro_amoroso' : 'outro',
+        relationshipContext: intent.isRomantic ? 'amor' : 'consulta',
+      });
+    }
+  }
 
   const rawResult: OracleRawResult = {};
 

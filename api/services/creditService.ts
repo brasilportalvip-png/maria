@@ -2,21 +2,36 @@ import { firestore } from '../_firebaseAdmin.js';
 import type { CreditLedgerEntry } from '../../src/types/spiritual.js';
 import { logger } from './logger.js';
 
-// In-memory ledger map for dev and testing
-const ledgerStore = new Map<string, CreditLedgerEntry>();
-const idempotencyStore = new Map<string, CreditLedgerEntry>();
+// Fast in-memory cache strictly for automated Vitest testing (NODE_ENV === 'test')
+const testLedgerStore = new Map<string, CreditLedgerEntry>();
+const testIdempotencyStore = new Map<string, CreditLedgerEntry>();
 
 export async function getUserCredits(uid: string): Promise<number> {
-  try {
-    const userDoc = await firestore.collection('users').doc(uid).get();
-    if (userDoc.exists) {
-      const data = userDoc.data();
-      return typeof data?.credits === 'number' ? data.credits : 7;
-    }
-  } catch (err) {
-    logger.warn('Error reading user credits from Firestore, using default:', { uid, error: String(err) });
+  if (!firestore) {
+    const err = new Error('SERVICE_UNAVAILABLE: Banco de dados indisponível.');
+    (err as any).statusCode = 503;
+    throw err;
   }
-  return 7;
+
+  const userDoc = await firestore.collection('users').doc(uid).get();
+  if (!userDoc.exists) {
+    if (process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST)) {
+      await firestore.collection('users').doc(uid).set({ credits: 7 });
+      return 7;
+    }
+    const err = new Error('USER_NOT_FOUND: Usuário não cadastrado.');
+    (err as any).statusCode = 404;
+    throw err;
+  }
+
+  const data = userDoc.data();
+  if (typeof data?.credits !== 'number') {
+    const err = new Error('CORRUPTED_CREDITS: Saldo inválido ou não inicializado.');
+    (err as any).statusCode = 500;
+    throw err;
+  }
+
+  return data.credits;
 }
 
 export async function debitCredits(params: {
@@ -33,95 +48,108 @@ export async function debitCredits(params: {
     throw new Error('O valor de débito deve ser maior que zero.');
   }
 
-  // Check idempotency first to prevent double billing
-  if (idempotencyKey && idempotencyStore.has(idempotencyKey)) {
-    const existing = idempotencyStore.get(idempotencyKey)!;
-    logger.info('Duplicate debit request ignored due to idempotencyKey', { idempotencyKey, uid });
-    return {
-      success: true,
-      newBalance: existing.newBalance,
-      ledgerId: existing.id,
-    };
+  if (!firestore) {
+    const err = new Error('SERVICE_UNAVAILABLE: Banco de dados indisponível.');
+    (err as any).statusCode = 503;
+    throw err;
   }
 
+  const opId = idempotencyKey ? `${uid}_${idempotencyKey}` : `${uid}_debit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const opRef = firestore.collection('credit_operations').doc(opId);
   const userRef = firestore.collection('users').doc(uid);
   const ledgerId = `led_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
+
+  // In-memory test idempotency check
+  const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+  if (isTestEnv && idempotencyKey && testIdempotencyStore.has(idempotencyKey)) {
+    const existing = testIdempotencyStore.get(idempotencyKey)!;
+    logger.info('Duplicate debit request ignored due to idempotencyKey', { idempotencyKey, uid });
+    return { success: true, newBalance: existing.newBalance, ledgerId: existing.id };
+  }
 
   let finalBalance = 0;
+  let finalLedgerId = ledgerId;
 
-  try {
-    await firestore.runTransaction(async (transaction: any) => {
-      const userDoc = await transaction.get(userRef);
-      const currentCredits = userDoc.exists && typeof userDoc.data()?.credits === 'number'
-        ? userDoc.data().credits
-        : 7;
-
-      if (currentCredits < amount) {
-        throw new Error('INSUFFICIENT_CREDITS');
+  // Single Atomic Transaction for financial integrity
+  await firestore.runTransaction(async (transaction: any) => {
+    // 1. Check persistent idempotency document
+    const opDoc = await transaction.get(opRef);
+    if (opDoc.exists) {
+      const existing = opDoc.data();
+      finalBalance = existing.newBalance;
+      if (existing.ledgerId) {
+        finalLedgerId = existing.ledgerId;
       }
+      return;
+    }
 
-      finalBalance = currentCredits - amount;
+    // 2. Fetch authoritative user balance
+    const userDoc = await transaction.get(userRef);
+    let userData = userDoc.exists ? userDoc.data() : null;
 
-      transaction.update(userRef, {
-        credits: finalBalance,
-        updatedAt: new Date().toISOString(),
-      });
-
-      const entry: CreditLedgerEntry = {
-        id: ledgerId,
-        uid,
-        type,
-        amount: -amount,
-        previousBalance: currentCredits,
-        newBalance: finalBalance,
-        referenceId,
-        idempotencyKey,
-        description,
-        timestamp: new Date().toISOString(),
-      };
-
-      const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
-      transaction.set(ledgerRef, entry);
-
-      ledgerStore.set(ledgerId, entry);
-      if (idempotencyKey) {
-        idempotencyStore.set(idempotencyKey, entry);
+    if (!userData) {
+      if (isTestEnv) {
+        userData = { credits: 7 };
+        transaction.set(userRef, { credits: 7 });
+      } else {
+        throw new Error('USER_NOT_FOUND');
       }
+    }
+    if (typeof userData?.credits !== 'number') {
+      throw new Error('CORRUPTED_CREDITS');
+    }
+
+    const currentCredits = userData.credits;
+    if (currentCredits < amount) {
+      throw new Error('INSUFFICIENT_CREDITS');
+    }
+
+    finalBalance = currentCredits - amount;
+
+    // 3. Update User Balance
+    transaction.update(userRef, {
+      credits: finalBalance,
+      updatedAt: new Date().toISOString(),
     });
-  } catch (err: any) {
-    if (err.message === 'INSUFFICIENT_CREDITS') {
-      throw new Error('INSUFFICIENT_CREDITS');
-    }
-    // Fallback in test/in-memory mode
-    const current = await getUserCredits(uid);
-    if (current < amount) {
-      throw new Error('INSUFFICIENT_CREDITS');
-    }
-    finalBalance = current - amount;
-    await userRef.set({ credits: finalBalance }, { merge: true });
 
+    // 4. Record Immutable Ledger Entry
     const entry: CreditLedgerEntry = {
       id: ledgerId,
       uid,
       type,
       amount: -amount,
-      previousBalance: current,
+      previousBalance: currentCredits,
       newBalance: finalBalance,
       referenceId,
       idempotencyKey,
       description,
       timestamp: new Date().toISOString(),
     };
-    ledgerStore.set(ledgerId, entry);
-    if (idempotencyKey) idempotencyStore.set(idempotencyKey, entry);
-  }
+    transaction.set(ledgerRef, entry);
 
-  logger.info('Credits debited successfully', { uid, amount, newBalance: finalBalance, type, referenceId });
+    // 5. Record Persistent Operation Idempotency
+    transaction.set(opRef, {
+      uid,
+      idempotencyKey,
+      ledgerId,
+      amount,
+      newBalance: finalBalance,
+      createdAt: new Date().toISOString(),
+    });
+
+    if (isTestEnv) {
+      testLedgerStore.set(ledgerId, entry);
+      if (idempotencyKey) testIdempotencyStore.set(idempotencyKey, entry);
+    }
+  });
+
+  logger.info('Credits debited successfully', { uid, amount, newBalance: finalBalance, type });
 
   return {
     success: true,
     newBalance: finalBalance,
-    ledgerId,
+    ledgerId: finalLedgerId,
   };
 }
 
@@ -130,35 +158,77 @@ export async function refundCredits(params: {
   amount: number;
   referenceId?: string;
   reason: string;
-}): Promise<{ success: boolean; newBalance: number }> {
+}): Promise<{ success: boolean; newBalance: number; ledgerId: string }> {
   const { uid, amount, referenceId, reason } = params;
-  const current = await getUserCredits(uid);
-  const newBalance = current + amount;
-  const ledgerId = `ref_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-  const entry: CreditLedgerEntry = {
-    id: ledgerId,
-    uid,
-    type: 'refund',
-    amount: amount,
-    previousBalance: current,
-    newBalance,
-    referenceId,
-    description: `Estorno automático: ${reason}`,
-    timestamp: new Date().toISOString(),
-  };
-
-  try {
-    await firestore.collection('users').doc(uid).set({ credits: newBalance }, { merge: true });
-    await firestore.collection('credit_ledger').doc(ledgerId).set(entry);
-  } catch (err) {
-    console.warn('[creditService] Refund storage warning:', err);
+  if (amount <= 0) {
+    throw new Error('O valor de estorno deve ser maior que zero.');
   }
 
-  ledgerStore.set(ledgerId, entry);
-  logger.info('Credits refunded successfully', { uid, amount, newBalance, reason, referenceId });
+  if (!firestore) {
+    const err = new Error('SERVICE_UNAVAILABLE: Banco de dados indisponível.');
+    (err as any).statusCode = 503;
+    throw err;
+  }
 
-  return { success: true, newBalance };
+  const refundOpId = referenceId ? `${uid}_refund_${referenceId}` : `${uid}_ref_${Date.now()}`;
+  const refundOpRef = firestore.collection('credit_operations').doc(refundOpId);
+  const userRef = firestore.collection('users').doc(uid);
+  const ledgerId = `ref_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
+
+  let newBalance = 0;
+
+  await firestore.runTransaction(async (transaction: any) => {
+    // Prevent double refund
+    const existingRefund = await transaction.get(refundOpRef);
+    if (existingRefund.exists) {
+      newBalance = existingRefund.data().newBalance;
+      return;
+    }
+
+    const userDoc = await transaction.get(userRef);
+    if (!userDoc.exists) {
+      throw new Error('USER_NOT_FOUND');
+    }
+
+    const current = userDoc.data().credits ?? 0;
+    newBalance = current + amount;
+
+    transaction.update(userRef, {
+      credits: newBalance,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const entry: CreditLedgerEntry = {
+      id: ledgerId,
+      uid,
+      type: 'refund',
+      amount,
+      previousBalance: current,
+      newBalance,
+      referenceId,
+      description: `Estorno atômico: ${reason}`,
+      timestamp: new Date().toISOString(),
+    };
+    transaction.set(ledgerRef, entry);
+
+    transaction.set(refundOpRef, {
+      uid,
+      referenceId,
+      ledgerId,
+      amount,
+      newBalance,
+      createdAt: new Date().toISOString(),
+    });
+
+    if (process.env.NODE_ENV === 'test') {
+      testLedgerStore.set(ledgerId, entry);
+    }
+  });
+
+  logger.info('Credits refunded successfully', { uid, amount, newBalance, reason });
+  return { success: true, newBalance, ledgerId };
 }
 
 export async function addPurchaseCredits(params: {
@@ -166,41 +236,68 @@ export async function addPurchaseCredits(params: {
   amount: number;
   paymentId: string;
   planId: string;
-}): Promise<{ success: boolean; newBalance: number }> {
+}): Promise<{ success: boolean; newBalance: number; ledgerId: string }> {
   const { uid, amount, paymentId, planId } = params;
 
-  // Check if this payment was already credited
-  const existingDoc = await firestore.collection('credit_ledger')
-    .where('referenceId', '==', paymentId)
-    .where('type', '==', 'purchase')
-    .limit(1)
-    .get();
-
-  if (!existingDoc.empty) {
-    logger.warn('Payment already credited, skipping:', { paymentId, uid });
-    const current = await getUserCredits(uid);
-    return { success: true, newBalance: current };
+  if (!firestore) {
+    const err = new Error('SERVICE_UNAVAILABLE: Banco de dados indisponível.');
+    (err as any).statusCode = 503;
+    throw err;
   }
 
-  const current = await getUserCredits(uid);
-  const newBalance = current + amount;
+  const purchaseOpRef = firestore.collection('credit_operations').doc(`purchase_${paymentId}`);
+  const userRef = firestore.collection('users').doc(uid);
   const ledgerId = `pur_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
 
-  const entry: CreditLedgerEntry = {
-    id: ledgerId,
-    uid,
-    type: 'purchase',
-    amount,
-    previousBalance: current,
-    newBalance,
-    referenceId: paymentId,
-    description: `Compra de créditos - Plano ${planId}`,
-    timestamp: new Date().toISOString(),
-  };
+  let finalBalance = 0;
 
-  await firestore.collection('users').doc(uid).set({ credits: newBalance }, { merge: true });
-  await firestore.collection('credit_ledger').doc(ledgerId).set(entry);
+  await firestore.runTransaction(async (transaction: any) => {
+    // Check if payment was already credited atomically
+    const opDoc = await transaction.get(purchaseOpRef);
+    if (opDoc.exists) {
+      finalBalance = opDoc.data().newBalance;
+      logger.warn('Payment already credited, idempotent return:', { paymentId, uid });
+      return;
+    }
 
-  logger.info('Purchase credits applied successfully', { uid, amount, newBalance, paymentId, planId });
-  return { success: true, newBalance };
+    const userDoc = await transaction.get(userRef);
+    if (!userDoc.exists) {
+      throw new Error('USER_NOT_FOUND');
+    }
+
+    const current = userDoc.data().credits ?? 0;
+    finalBalance = current + amount;
+
+    transaction.update(userRef, {
+      credits: finalBalance,
+      lastPlanId: planId,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const entry: CreditLedgerEntry = {
+      id: ledgerId,
+      uid,
+      type: 'purchase',
+      amount,
+      previousBalance: current,
+      newBalance: finalBalance,
+      referenceId: paymentId,
+      description: `Compra de créditos - Plano ${planId}`,
+      timestamp: new Date().toISOString(),
+    };
+    transaction.set(ledgerRef, entry);
+
+    transaction.set(purchaseOpRef, {
+      uid,
+      paymentId,
+      ledgerId,
+      amount,
+      newBalance: finalBalance,
+      createdAt: new Date().toISOString(),
+    });
+  });
+
+  logger.info('Purchase credits applied transactionally', { uid, amount, newBalance: finalBalance, paymentId, planId });
+  return { success: true, newBalance: finalBalance, ledgerId };
 }

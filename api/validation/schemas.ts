@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+const dateRegex = /^(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})$/;
+const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 export const ChatMessageSchema = z.object({
   message: z.string().min(1, 'Mensagem não pode ser vazia').max(2000, 'Mensagem muito longa (máximo 2000 caracteres)'),
   history: z.array(z.object({
@@ -23,13 +26,27 @@ export const OracleReadingRequestSchema = z.object({
   question: z.string().max(2000).optional(),
   userData: z.object({
     fullName: z.string().min(2).max(150),
-    birthDate: z.string().min(4).max(25),
-    birthTime: z.string().max(10).optional(),
+    birthDate: z.string().regex(dateRegex, 'Data de nascimento inválida (use AAAA-MM-DD ou DD/MM/AAAA)'),
+    birthTime: z.string().regex(timeRegex, 'Horário inválido (use HH:mm)').optional().or(z.literal('')),
     city: z.string().max(100).optional().default(''),
     timezone: z.string().max(50).optional().default('America/Sao_Paulo'),
   }).optional(),
   specificName: z.string().max(150).optional(),
-  specificDate: z.string().max(25).optional(),
+  specificDate: z.string().regex(dateRegex, 'Data de nascimento da pessoa inválida').optional().or(z.literal('')),
+  participantRelation: z.enum([
+    'não informado',
+    'amor',
+    'ex',
+    'cônjuge',
+    'família',
+    'amizade',
+    'sociedade',
+    'trabalho',
+    'chefe',
+    'funcionário',
+    'cliente',
+    'outro'
+  ]).optional(),
   idempotencyKey: z.string().max(100).optional(),
   readingId: z.string().max(100).optional(),
 });
@@ -38,12 +55,19 @@ export const RegisterRequestSchema = z.object({
   fullName: z.string().min(2, 'Nome muito curto').max(150),
   email: z.string().email('E-mail inválido').max(150),
   phone: z.string().min(8, 'Telefone inválido').max(25),
-  birthDate: z.string().min(4, 'Data de nascimento obrigatória').max(25),
-  birthTime: z.string().max(10).optional(),
+  birthDate: z.string().regex(dateRegex, 'Data de nascimento inválida (use AAAA-MM-DD ou DD/MM/AAAA)'),
+  birthTime: z.string().regex(timeRegex, 'Horário inválido (use HH:mm)').optional().or(z.literal('')),
   city: z.string().min(2, 'Cidade obrigatória').max(100),
   password: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres').max(100),
   timezone: z.string().max(50).optional().default('America/Sao_Paulo'),
   deviceId: z.string().max(150).optional(),
+});
+
+export const UpdateNatalSchema = z.object({
+  birthDate: z.string().regex(dateRegex, 'Data de nascimento inválida'),
+  birthTime: z.string().regex(timeRegex, 'Horário inválido (use HH:mm)').optional().or(z.literal('')),
+  city: z.string().min(2, 'Cidade inválida').max(100),
+  timezone: z.string().max(50).optional().default('America/Sao_Paulo'),
 });
 
 export const CreatePaymentRequestSchema = z.object({

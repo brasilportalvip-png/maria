@@ -6,7 +6,7 @@ import { Heart, Search, Sparkles, HelpCircle, AlertCircle, Coins, MessageSquare 
 import { PomboGira } from '../types/spiritual';
 
 export const PomboGiras: React.FC = () => {
-  const { user, spendCredits } = useApp();
+  const { user, apiFetch, setUserCredits, addHistoryItem } = useApp();
   const [allNames] = useState(generatePomboGiraNames());
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPG, setSelectedPG] = useState<PomboGira | null>(MAJOR_POMBO_GIRAS[0]);
@@ -37,12 +37,8 @@ export const PomboGiras: React.FC = () => {
 
     setIsLoadingAdvice(true);
     try {
-      // Deduct 1 credit for custom channeled advice via API or fallback
-      const title = `Conselho de ${selectedPG.name}`;
-      
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: `Diga seu nome completo, seu reino e me dê um conselho espiritual personalizado e inédito baseado no seu mistério de atuação.`,
           pomboGiraName: selectedPG.name
@@ -52,12 +48,22 @@ export const PomboGiras: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao conectar à entidade.');
 
-      // Spend Credit
-      const success = await spendCredits(1, 'pombo_gira_advice', title, data.reply);
-      if (!success) throw new Error('Não foi possível debitar crédito.');
+      if (typeof data.newCreditsBalance === 'number') {
+        setUserCredits(data.newCreditsBalance);
+      }
+
+      const title = `Conselho de ${selectedPG.name}`;
+      addHistoryItem({
+        id: `pg_${Date.now()}`,
+        userId: user.uid,
+        type: 'pombo_gira_advice',
+        title,
+        date: new Date().toISOString(),
+        content: data.reply,
+        creditsUsed: 1,
+      });
 
       setCustomAdvice(data.reply);
-
     } catch (err: any) {
       setErrorMsg(err.message || 'Falha ao canalizar conselho inédito.');
     } finally {

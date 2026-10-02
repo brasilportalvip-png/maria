@@ -9,10 +9,6 @@ export interface AuthenticatedRequest extends Request {
   clientIp?: string;
 }
 
-const ADMIN_EMAILS = [
-  'brasilportalvip@gmail.com'
-];
-
 export function getClientIp(req: Request): string {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string') {
@@ -24,7 +20,7 @@ export function getClientIp(req: Request): string {
   return req.socket?.remoteAddress || '127.0.0.1';
 }
 
-export async function verifyUserToken(authHeader?: string): Promise<{ uid: string; email?: string } | null> {
+export async function verifyUserToken(authHeader?: string): Promise<{ uid: string; email?: string; admin?: boolean } | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null;
   }
@@ -36,22 +32,29 @@ export async function verifyUserToken(authHeader?: string): Promise<{ uid: strin
     // If Firebase Admin has verified credentials, verify token using Admin SDK
     if (adminAuth && typeof adminAuth.verifyIdToken === 'function') {
       const decoded = await adminAuth.verifyIdToken(token);
-      return { uid: decoded.uid, email: decoded.email };
+      return {
+        uid: decoded.uid,
+        email: decoded.email,
+        admin: Boolean(decoded.admin),
+      };
     }
   } catch (err: any) {
     console.warn('[Auth Middleware] Firebase ID Token verification failed:', err?.message || err);
   }
 
-  // Fallback for development/testing environments when testing with deterministic session tokens
-  if (token.startsWith('test_token_')) {
+  // Strictly isolated to Vitest unit/integration testing
+  const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+  if (isTestEnv && token.startsWith('test_token_')) {
     const uid = token.replace('test_token_', '');
-    return { uid, email: `${uid}@portal.com` };
+    const isAdmin = uid.includes('admin');
+    return { uid, email: `${uid}@portal.com`, admin: isAdmin };
   }
 
   return null;
 }
 
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next?: NextFunction): Promise<boolean> {
+  const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
   req.clientIp = getClientIp(req);
   req.correlationId = (req.headers['x-correlation-id'] as string) || `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -62,65 +65,79 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     res.status(401).json({
       error: 'Autenticação necessária. Token ausente ou inválido.',
       code: 'AUTH_REQUIRED',
-      correlationId: req.correlationId
+      correlationId: req.correlationId,
+    });
+    return false;
+  }
+
+  if (!firestore) {
+    res.status(503).json({
+      error: 'Serviço de dados do Firebase Admin indisponível no servidor.',
+      code: 'SERVICE_UNAVAILABLE',
+      correlationId: req.correlationId,
     });
     return false;
   }
 
   try {
     const userDoc = await firestore.collection('users').doc(tokenPayload.uid).get();
+    let data: UserProfile;
+
     if (userDoc.exists) {
-      const data = userDoc.data() as UserProfile;
-      if (data.isBlocked) {
-        res.status(403).json({
-          error: 'Acesso negado. Esta conta foi bloqueada por razões de segurança.',
-          code: 'USER_BLOCKED',
-          correlationId: req.correlationId
-        });
-        return false;
-      }
-      req.user = data;
-    } else {
-      // Create minimal user representation if doc not found yet
-      req.user = {
+      data = userDoc.data() as UserProfile;
+    } else if (isTestEnv && authHeader?.includes('test_token_')) {
+      data = {
         uid: tokenPayload.uid,
-        fullName: 'Consulente',
-        email: tokenPayload.email || '',
+        fullName: 'Test User',
+        email: `${tokenPayload.uid}@portal.com`,
         phone: '',
-        birthDate: '',
-        city: '',
-        credits: 7,
+        birthDate: '1990-01-01',
+        birthTime: '12:00',
+        city: 'São Paulo',
+        timezone: 'America/Sao_Paulo',
+        credits: 10,
         isBlocked: false,
-        isVerified: true,
-        emailVerified: true,
+        isVerified: false,
+        emailVerified: false,
         phoneVerified: false,
         mfaEnabled: false,
         antiFraudScore: 0,
-        deviceFingerprint: 'dev',
-        role: ADMIN_EMAILS.includes(tokenPayload.email || '') ? 'admin' : 'user',
-        createdAt: new Date().toISOString()
+        deviceFingerprint: 'test',
+        role: tokenPayload.admin ? 'admin' : 'user',
+        createdAt: new Date().toISOString(),
       };
+    } else {
+      res.status(404).json({
+        error: 'Perfil de usuário não encontrado no Firestore.',
+        code: 'USER_NOT_FOUND',
+        correlationId: req.correlationId,
+      });
+      return false;
     }
-  } catch (error) {
+
+    if (data.isBlocked) {
+      res.status(403).json({
+        error: 'Acesso negado. Esta conta foi bloqueada por razões de segurança.',
+        code: 'USER_BLOCKED',
+        correlationId: req.correlationId,
+      });
+      return false;
+    }
+
+    // Role is authoritative: custom claims take precedence, followed by verified firestore record
+    if (tokenPayload.admin) {
+      data.role = 'admin';
+    }
+
+    req.user = data;
+  } catch (error: any) {
     console.error('[requireAuth] Error fetching user doc:', error);
-    req.user = {
-      uid: tokenPayload.uid,
-      fullName: 'Consulente',
-      email: tokenPayload.email || '',
-      phone: '',
-      birthDate: '',
-      city: '',
-      credits: 7,
-      isBlocked: false,
-      isVerified: true,
-      emailVerified: true,
-      phoneVerified: false,
-      mfaEnabled: false,
-      antiFraudScore: 0,
-      deviceFingerprint: 'dev',
-      role: ADMIN_EMAILS.includes(tokenPayload.email || '') ? 'admin' : 'user',
-      createdAt: new Date().toISOString()
-    };
+    res.status(500).json({
+      error: 'Erro interno ao validar perfil do usuário.',
+      code: 'INTERNAL_ERROR',
+      correlationId: req.correlationId,
+    });
+    return false;
   }
 
   if (next) {
@@ -134,13 +151,14 @@ export async function requireAdmin(req: AuthenticatedRequest, res: Response, nex
   if (!isAuthed) return false;
 
   const user = req.user;
-  const isAdmin = user && (user.role === 'admin' || ADMIN_EMAILS.includes(user.email.toLowerCase()));
+  // Admin is strictly verified via Custom Claim or verified admin role, NEVER hardcoded email
+  const isAdmin = user && user.role === 'admin';
 
   if (!isAdmin) {
     res.status(403).json({
-      error: 'Acesso restrito. Privilégios administrativos necessários.',
+      error: 'Acesso restrito. Privilégios administrativos necessários (Custom Claim admin: true).',
       code: 'ADMIN_REQUIRED',
-      correlationId: req.correlationId
+      correlationId: req.correlationId,
     });
     return false;
   }

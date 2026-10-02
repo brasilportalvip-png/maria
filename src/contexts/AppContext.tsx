@@ -44,19 +44,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [diary, setDiary] = useState<DiaryEntry[]>([]);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  // Helper to get fresh Firebase ID token or secure local session token
+  // Helper to get fresh Firebase ID token strictly from active Firebase Auth session
   const getAuthToken = useCallback(async (): Promise<string> => {
     try {
       if (auth.currentUser) {
-        const token = await auth.currentUser.getIdToken(true);
+        const token = await auth.currentUser.getIdToken(false);
         if (token) return token;
       }
     } catch (e) {
-      console.warn('[AppContext] getIdToken failed, falling back:', e);
+      console.warn('[AppContext] getIdToken failed:', e);
     }
-    const currentUid = user?.uid || localStorage.getItem('mp_active_user_uid');
-    return currentUid ? `test_token_${currentUid}` : '';
-  }, [user]);
+    return '';
+  }, []);
 
   // Authenticated fetch wrapper
   const apiFetch = useCallback(async (url: string, options: RequestInit = {}): Promise<Response> => {
@@ -71,7 +70,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return fetch(url, { ...options, headers });
   }, [getAuthToken]);
 
-  // Load user data on startup
+  // Load user data on startup strictly via Firebase Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -81,27 +80,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (snap.exists()) {
             const profile = snap.data() as UserProfile;
             setUser(profile);
-            localStorage.setItem('mp_active_user_uid', profile.uid);
             loadUserData(profile.uid);
             return;
           }
         } catch (err) {
-          console.warn('[AppContext] Firestore getDoc failed, using cached session:', err);
+          console.warn('[AppContext] Firestore getDoc failed on auth state change:', err);
         }
-      }
-
-      // Check local storage session fallback
-      const storedUid = localStorage.getItem('mp_active_user_uid');
-      if (storedUid) {
-        const storedUsers = localStorage.getItem('mp_registered_users');
-        if (storedUsers) {
-          const users: UserProfile[] = JSON.parse(storedUsers);
-          const found = users.find((u) => u.uid === storedUid);
-          if (found && !found.isBlocked) {
-            setUser(found);
-            loadUserData(found.uid);
-          }
-        }
+      } else {
+        setUser(null);
+        setHistory([]);
+        setDiary([]);
       }
     });
 
@@ -179,14 +167,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const newUser: UserProfile = result.user;
+
+      // Automatically sign in with client SDK to establish authentic Firebase session
+      try {
+        await signInWithEmailAndPassword(auth, data.email.trim(), data.password);
+      } catch (authErr) {
+        console.warn('[AppContext] Client auto-login after register failed:', authErr);
+      }
+
       setUser(newUser);
-      localStorage.setItem('mp_active_user_uid', newUser.uid);
-
-      // Cache locally
-      const storedUsers = localStorage.getItem('mp_registered_users');
-      const users: UserProfile[] = storedUsers ? JSON.parse(storedUsers) : [];
-      localStorage.setItem('mp_registered_users', JSON.stringify([...users.filter((u) => u.uid !== newUser.uid), newUser]));
-
+      await loadUserData(newUser.uid);
       return newUser;
     } finally {
       setIsAuthenticating(false);
@@ -196,45 +186,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const login = async (email: string, password: string): Promise<UserProfile> => {
     setIsAuthenticating(true);
     try {
-      let loggedUser: UserProfile | null = null;
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const userDocRef = doc(db, 'users', cred.user.uid);
+      const snap = await getDoc(userDocRef);
 
-      // Try Firebase Client Auth
-      try {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
-        const docRef = doc(db, 'users', cred.user.uid);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          loggedUser = snap.data() as UserProfile;
-        }
-      } catch (fbErr: any) {
-        console.warn('[AppContext] Firebase Auth failed, checking local users:', fbErr?.message);
+      if (!snap.exists()) {
+        throw new Error('Perfil de usuário não encontrado no Firestore. Contate o suporte.');
       }
 
-      // Fallback to local synced accounts
-      if (!loggedUser) {
-        const storedUsers = localStorage.getItem('mp_registered_users');
-        if (storedUsers) {
-          const list: UserProfile[] = JSON.parse(storedUsers);
-          const match = list.find((u) => u.email.toLowerCase() === email.toLowerCase());
-          if (match) {
-            loggedUser = match;
-          }
-        }
-      }
-
-      if (!loggedUser) {
-        throw new Error('E-mail ou senha incorretos.');
-      }
+      const loggedUser = snap.data() as UserProfile;
 
       if (loggedUser.isBlocked) {
+        await signOut(auth);
         throw new Error('Esta conta foi bloqueada por razões de segurança.');
       }
 
       setUser(loggedUser);
-      localStorage.setItem('mp_active_user_uid', loggedUser.uid);
       await loadUserData(loggedUser.uid);
-
       return loggedUser;
+    } catch (err: any) {
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        throw new Error('E-mail ou senha incorretos.');
+      }
+      throw new Error(err.message || 'Falha ao autenticar.');
     } finally {
       setIsAuthenticating(false);
     }
@@ -246,7 +220,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.warn('Sign out warning:', e);
     }
-    localStorage.removeItem('mp_active_user_uid');
     setUser(null);
     setHistory([]);
     setDiary([]);
@@ -261,12 +234,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!user) return;
     const updated = { ...user, credits };
     setUser(updated);
-    const storedUsers = localStorage.getItem('mp_registered_users');
-    if (storedUsers) {
-      const list: UserProfile[] = JSON.parse(storedUsers);
-      const nextList = list.map((u) => (u.uid === user.uid ? updated : u));
-      localStorage.setItem('mp_registered_users', JSON.stringify(nextList));
-    }
   };
 
   const spendCredits = async (amount: number, type: string, title?: string, content?: any): Promise<boolean> => {

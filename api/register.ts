@@ -36,24 +36,32 @@ export default async function handler(req: Request, res: Response) {
       });
     }
 
-    let uid = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    let uid: string;
 
-    // If Firebase Admin has verified credentials, create real Firebase Auth user
-    if (adminAuth && typeof adminAuth.createUser === 'function') {
-      try {
-        const firebaseUser = await adminAuth.createUser({
-          email: normalizedEmail,
-          password: data.password,
-          displayName: data.fullName,
-          emailVerified: false,
-        });
-        uid = firebaseUser.uid;
-      } catch (authErr: any) {
-        if (authErr?.code === 'auth/email-already-exists') {
-          return res.status(400).json({ error: 'Este e-mail já está cadastrado.' });
-        }
-        logger.warn('Firebase Admin createUser fallback:', { error: String(authErr) });
+    if (!adminAuth || typeof adminAuth.createUser !== 'function') {
+      return res.status(503).json({
+        error: 'Serviço de autenticação temporariamente indisponível no servidor.',
+        code: 'SERVICE_UNAVAILABLE',
+      });
+    }
+
+    try {
+      const firebaseUser = await adminAuth.createUser({
+        email: normalizedEmail,
+        password: data.password,
+        displayName: data.fullName,
+        emailVerified: false,
+      });
+      uid = firebaseUser.uid;
+    } catch (authErr: any) {
+      if (authErr?.code === 'auth/email-already-exists') {
+        return res.status(400).json({ error: 'Este e-mail já está cadastrado.' });
       }
+      logger.error('Firebase Admin createUser failed:', { error: String(authErr) });
+      return res.status(500).json({
+        error: 'Falha ao criar credencial de autenticação no Firebase.',
+        code: 'AUTH_CREATION_FAILED',
+      });
     }
 
     const INITIAL_CREDITS = 7;
@@ -69,35 +77,39 @@ export default async function handler(req: Request, res: Response) {
       timezone: data.timezone || 'America/Sao_Paulo',
       credits: INITIAL_CREDITS,
       isBlocked: false,
-      isVerified: true,
+      isVerified: false,
       emailVerified: false,
       phoneVerified: false,
       mfaEnabled: false,
       antiFraudScore: 0,
       deviceFingerprint: data.deviceId || 'web',
-      role: normalizedEmail === 'brasilportalvip@gmail.com' ? 'admin' : 'user',
+      role: 'user', // Role is never assigned by email, only via Admin Custom Claim
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    // Save user doc
-    await firestore.collection('users').doc(uid).set(newUser);
+    // Save user doc and credit ledger transactionally
+    await firestore.runTransaction(async (transaction: any) => {
+      const userRef = firestore.collection('users').doc(uid);
+      const ledgerId = `led_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
 
-    // Record initial credit ledger
-    const ledgerEntry: CreditLedgerEntry = {
-      id: `led_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-      uid,
-      type: 'promotion',
-      amount: INITIAL_CREDITS,
-      previousBalance: 0,
-      newBalance: INITIAL_CREDITS,
-      description: 'Boas-vindas ao Reino de Maria Padilha — 07 créditos iniciais',
-      timestamp: new Date().toISOString(),
-    };
+      const ledgerEntry: CreditLedgerEntry = {
+        id: ledgerId,
+        uid,
+        type: 'promotion',
+        amount: INITIAL_CREDITS,
+        previousBalance: 0,
+        newBalance: INITIAL_CREDITS,
+        description: 'Boas-vindas ao Reino de Maria Padilha — 07 créditos iniciais',
+        timestamp: new Date().toISOString(),
+      };
 
-    await firestore.collection('credit_ledger').doc(ledgerEntry.id).set(ledgerEntry);
+      transaction.set(userRef, newUser);
+      transaction.set(ledgerRef, ledgerEntry);
+    });
 
-    logger.info('User successfully registered', { uid, email: normalizedEmail, ip: clientIp });
+    logger.info('User successfully registered with real Firebase Auth UID', { uid, email: normalizedEmail, ip: clientIp });
 
     return res.status(200).json({
       user: newUser,
