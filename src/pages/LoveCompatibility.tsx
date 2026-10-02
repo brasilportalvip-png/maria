@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { motion } from 'motion/react';
 import { Heart, Coins, Calendar, User, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
+import { ReadingViewer } from '../components/ReadingViewer';
 
 export const LoveCompatibility: React.FC = () => {
   const { user, apiFetch, setUserCredits, addHistoryItem } = useApp();
@@ -115,12 +116,9 @@ export const LoveCompatibility: React.FC = () => {
         >
           <div className="text-center border-b border-gray-900 pb-4 mb-6 flex flex-col items-center">
             <div className="w-20 h-20 rounded-full overflow-hidden border border-red-500/50 shadow-[0_0_15px_rgba(139,0,0,0.4)] mb-3">
-              <video
-                src="https://portalvipbrasil.com.br/wp-content/uploads/2026/06/Maria-Padilha-Rainha-Das-7-Encruzilhadas-Portas-Das-Pombo-giras.mp4"
-                autoPlay
-                loop
-                muted
-                playsInline
+              <img
+                src="/image/Maria Padilha Logo.png"
+                alt="Maria Padilha"
                 className="w-full h-full object-cover"
               />
             </div>
@@ -164,7 +162,7 @@ export const LoveCompatibility: React.FC = () => {
                 <Sparkles className="w-4 h-4 text-red-500" />
                 Doutrina dos Caminhos de Maria Padilha para o Casal
               </h4>
-              <div dangerouslySetInnerHTML={{ __html: readingResult }} />
+              <ReadingViewer content={readingResult || ''} />
             </div>
           </div>
 
@@ -191,12 +189,9 @@ export const LoveCompatibility: React.FC = () => {
           {isLoading ? (
             <div className="text-center py-12 flex flex-col items-center">
               <div className="w-24 h-24 rounded-full overflow-hidden border border-[#D4AF37]/50 shadow-[0_0_15px_rgba(212,175,55,0.4)] mb-4">
-                <video
-                  src="https://portalvipbrasil.com.br/wp-content/uploads/2026/06/Maria-Padilha-Rainha-Das-7-Encruzilhadas-Portas-Das-Pombo-giras.mp4"
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
+                <img
+                  src="/image/Maria Padilha Logo.png"
+                  alt="Maria Padilha"
                   className="w-full h-full object-cover"
                 />
               </div>

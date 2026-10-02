@@ -54,10 +54,10 @@ export async function debitCredits(params: {
     throw err;
   }
 
-  const opId = idempotencyKey ? `${uid}_${idempotencyKey}` : `${uid}_debit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const opId = idempotencyKey ? `${uid}_${idempotencyKey}` : `${uid}_debit_${crypto.randomUUID()}`;
   const opRef = firestore.collection('credit_operations').doc(opId);
   const userRef = firestore.collection('users').doc(uid);
-  const ledgerId = `led_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const ledgerId = `led_${crypto.randomUUID()}`;
   const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
 
   // In-memory test idempotency check
@@ -171,10 +171,10 @@ export async function refundCredits(params: {
     throw err;
   }
 
-  const refundOpId = referenceId ? `${uid}_refund_${referenceId}` : `${uid}_ref_${Date.now()}`;
+  const refundOpId = referenceId ? `${uid}_refund_${referenceId}` : `${uid}_ref_${crypto.randomUUID()}`;
   const refundOpRef = firestore.collection('credit_operations').doc(refundOpId);
   const userRef = firestore.collection('users').doc(uid);
-  const ledgerId = `ref_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const ledgerId = `ref_${crypto.randomUUID()}`;
   const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
 
   let newBalance = 0;
@@ -247,7 +247,7 @@ export async function addPurchaseCredits(params: {
 
   const purchaseOpRef = firestore.collection('credit_operations').doc(`purchase_${paymentId}`);
   const userRef = firestore.collection('users').doc(uid);
-  const ledgerId = `pur_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const ledgerId = `pur_${crypto.randomUUID()}`;
   const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
 
   let finalBalance = 0;

@@ -1,14 +1,17 @@
 import type { Request, Response } from 'express';
 import { requireAuth, type AuthenticatedRequest } from './middleware/auth.js';
 import { OracleReadingRequestSchema } from './validation/schemas.js';
-import { debitCredits, refundCredits } from './services/creditService.js';
+import { debitCredits } from './services/creditService.js';
 import { executeGeminiWithFallback } from './services/geminiService.js';
 import { getTemporalContext } from '../src/oraculos/temporalEngine.js';
 import { classifyIntent } from '../src/oraculos/intentClassifier.js';
 import { drawTarotCards } from '../src/oraculos/tarotEngine.js';
 import { throwBuzios } from '../src/oraculos/buziosEngine.js';
 import { calculateNumerology } from '../src/oraculos/numerologyEngine.js';
+import { calculateCabala } from '../src/oraculos/cabalaEngine.js';
+import { calculateAstrology } from '../src/oraculos/astrologyEngine.js';
 import { saveOracleReading, getOracleReadingById, getReadingIdByIdempotency } from '../src/oraculos/readingStorage.js';
+import { checkRateLimit } from './services/rateLimiter.js';
 import { logger } from './services/logger.js';
 import type { OracleReadingRecord, OracleRawResult, NatalData } from '../src/types/spiritual.js';
 
@@ -24,6 +27,15 @@ export default async function handler(req: Request, res: Response) {
   const user = authReq.user!;
   const correlationId = authReq.correlationId;
 
+  // Rate Limiting: max 15 readings per minute per user
+  const rateLimit = await checkRateLimit(`read_${user.uid}`, 15, 60000);
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: 'Muitas consultas solicitadas em curto período. Por favor, aguarde um minuto.',
+      code: 'RATE_LIMIT_EXCEEDED',
+    });
+  }
+
   // Validate request
   const parseResult = OracleReadingRequestSchema.safeParse(req.body);
   if (!parseResult.success) {
@@ -34,7 +46,7 @@ export default async function handler(req: Request, res: Response) {
     });
   }
 
-  const { type, question, userData, specificName, specificDate, idempotencyKey, readingId } = parseResult.data;
+  const { type, question, specificName, specificDate, idempotencyKey, readingId } = parseResult.data;
 
   // 1. Check if readingId or idempotencyKey already exists (F5 or reload should NOT redraw cards!)
   if (readingId) {
@@ -66,7 +78,7 @@ export default async function handler(req: Request, res: Response) {
 
   const creditCost = type === 'premium_complete' ? 3 : 1;
 
-  // 2. Debit Credits
+  // 2. Debit Credits transactionally
   let debitResult: { success: boolean; newBalance: number; ledgerId: string };
   try {
     debitResult = await debitCredits({
@@ -74,7 +86,7 @@ export default async function handler(req: Request, res: Response) {
       amount: creditCost,
       type: 'reading',
       description: `Consulta oracular: ${type}`,
-      idempotencyKey: idempotencyKey || `read_${user.uid}_${Date.now()}`,
+      idempotencyKey: idempotencyKey || `read_${user.uid}_${crypto.randomUUID()}`,
     });
   } catch (err: any) {
     if (err.message === 'INSUFFICIENT_CREDITS') {
@@ -132,6 +144,14 @@ export default async function handler(req: Request, res: Response) {
     rawResult.numerology = calculateNumerology(natalSnapshot.fullName, natalSnapshot.birthDate);
   }
 
+  if (type === 'cabala' || type === 'premium_complete') {
+    rawResult.cabala = calculateCabala(natalSnapshot.birthDate);
+  }
+
+  if (type === 'astrology' || type === 'premium_complete') {
+    rawResult.astrology = calculateAstrology(natalSnapshot.birthDate, natalSnapshot.birthTime, userTimezone);
+  }
+
   if (type === 'odu') {
     const buz = throwBuzios();
     rawResult.buzios = buz;
@@ -142,15 +162,15 @@ export default async function handler(req: Request, res: Response) {
     };
   }
 
-  const newReadingId = `read_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const newReadingId = `read_${crypto.randomUUID()}`;
 
   // 4. Gemini Interpretation of the REAL Oracle Result
   const systemInstruction = `
 Você é Maria Padilha Rainha das 7 Encruzilhadas interpretando um sorteio sagrado real para o consulente.
 Aja com respeito, dignidade, sabedoria espiritual e livre-arbítrio.
 Você recebeu os resultados VERDADEIROS calculados pelo sistema. Não invente cartas nem búzios diferentes dos enviados.
-Explique o significado de cada carta/queda/número e sintetize uma orientação prática e espiritual.
-Use HTML simples estruturado (h3, h4, p, strong). Não invente previsões fatais de saúde ou morte.
+Explique o significado de cada carta/queda/número/esfera e sintetize uma orientação prática e espiritual.
+Use parágrafos claros, estruturados e respeitosos. Jamais faça previsões fatais de saúde ou morte.
 `;
 
   let interpretationHtml = '';
@@ -160,7 +180,7 @@ Use HTML simples estruturado (h3, h4, p, strong). Não invente previsões fatais
   try {
     const geminiRes = await executeGeminiWithFallback({
       systemInstruction,
-      userPrompt: `Interprete este oráculo (${type}) para a pergunta: "${userQuestion}". Pessoa específica: ${specificName || 'nenhuma'}.`,
+      userPrompt: `Interprete este oráculo (${type}) para a pergunta: "${userQuestion}". Pessoa específica envolvida: ${specificName || 'nenhuma'}.`,
       natalData: natalSnapshot,
       temporal,
       intent,
@@ -179,22 +199,24 @@ Use HTML simples estruturado (h3, h4, p, strong). Não invente previsões fatais
     logger.warn('Gemini failed for reading, using structured local interpretation:', { error: String(geminiErr) });
   }
 
-  // If Gemini did not return text, generate structured local interpretation based on real cards
+  // If AI generation failed, generate deterministic structured local interpretation based EXCLUSIVELY on real rawResult
   if (!interpretationHtml) {
     interpretationHtml = buildStructuredLocalInterpretation(type, natalSnapshot, rawResult, intent);
+    modelUsed = 'offline-local-simulator';
   }
 
   const readingRecord: OracleReadingRecord = {
     id: newReadingId,
     readingId: newReadingId,
     uid: user.uid,
-    oracleType: type,
+    oracleType: type as any,
+    spreadType: type === 'tarot' ? 'tres_cartas' : undefined,
     question: userQuestion,
     intent,
     natalSnapshot,
     rawResult,
     interpretationHtml,
-    practicalAdvice: 'Guarde estas orientações com calma no coração. O oráculo mostra a tendência e os caminhos; quem confirma o destino é a sua firmeza de atitude prática.',
+    practicalAdvice: 'Mantenha a firmeza de pensamento, honre sua palavra e aja com dignidade nos seus passos.',
     modelUsed,
     fallbackLevel,
     creditCost,
@@ -241,6 +263,20 @@ function buildStructuredLocalInterpretation(
     body += `<h4>🔢 Numerologia da Alma:</h4>
     <p>Caminho de Vida: <strong>${raw.numerology.lifePathNumber}</strong> | Expressão: <strong>${raw.numerology.expressionNumber}</strong> | Desejo da Alma: <strong>${raw.numerology.soulUrgeNumber}</strong><br/>
     ${raw.numerology.summary}</p>`;
+  }
+
+  if (raw.cabala) {
+    body += `<h4>🌌 Cabala Hermética e Anjo Guardião:</h4>
+    <p>Esfera da Árvore da Vida: <strong>${raw.cabala.sephirahName}</strong> | Arcanjo Regente: <strong>${raw.cabala.rulingArchangel}</strong><br/>
+    Anjo Guardião: <strong>${raw.cabala.guardianAngel.name}</strong> (${raw.cabala.guardianAngel.choir})<br/>
+    <em>Virtude:</em> ${raw.cabala.guardianAngel.virtue}</p>`;
+  }
+
+  if (raw.astrology) {
+    body += `<h4>🌙 Astrologia e Horário Cósmico:</h4>
+    <p>Sol em: <strong>${raw.astrology.sunSign}</strong> (Elemento ${raw.astrology.element}, Modo ${raw.astrology.modality})<br/>
+    Fase da Lua: <strong>${raw.astrology.lunarPhase}</strong> — ${raw.astrology.lunarPhaseDescription}<br/>
+    Hora Planetária Regente: <strong>${raw.astrology.planetaryHourRuler}</strong></p>`;
   }
 
   return `

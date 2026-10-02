@@ -11,6 +11,7 @@ import createPaymentHandler from './api/create-payment.js';
 import mercadopagoWebhookHandler from './api/mercadopago-webhook.js';
 import adminHandler from './api/admin.js';
 import accountHandler from './api/account.js';
+import healthHandler from './api/health.js';
 
 dotenv.config();
 
@@ -20,15 +21,14 @@ const PORT = 3000;
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Health Check
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'online',
-    service: 'Reino de Maria Padilha',
-    version: '2.0.0',
-    timestamp: new Date().toISOString(),
-  });
+// No-store cache control for dynamic API endpoints
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  next();
 });
+
+// Health Check
+app.all('/api/health', (req, res) => healthHandler(req as any, res as any));
 
 // Private & Core API Routes
 app.all('/api/chat', (req, res) => chatHandler(req as any, res as any));

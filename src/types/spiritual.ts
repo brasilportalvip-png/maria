@@ -105,6 +105,8 @@ export interface OracleRawResult {
     number: number;
     description: string;
   };
+  cabala?: any;
+  astrology?: any;
   customDetails?: Record<string, any>;
 }
 
@@ -182,6 +184,9 @@ export interface PaymentOrder {
   status: 'pending' | 'approved' | 'rejected' | 'credited' | 'failed';
   providerPreferenceId?: string;
   providerPaymentId?: string;
+  initPoint?: string;
+  sandboxInitPoint?: string;
+  creditedAt?: string;
   idempotencyKey: string;
   createdAt: string;
   updatedAt: string;

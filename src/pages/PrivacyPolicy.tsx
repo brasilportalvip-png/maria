@@ -208,12 +208,15 @@ export const PrivacyPolicy: React.FC = () => {
           )}
 
           <section>
-            <h2 className="font-serif text-base font-bold text-[#D4AF37] mb-2">6. Canal de Atendimento do Encarregado (DPO)</h2>
-            <p>
-              Para dúvidas, esclarecimentos ou solicitações relativas à privacidade e proteção de dados pessoais, entre em contato pelo e-mail:{' '}
+            <h2 className="font-serif text-base font-bold text-[#D4AF37] mb-2">6. Canal de Privacidade e Proteção de Dados</h2>
+            <p className="text-gray-300 leading-relaxed mb-3">
+              Para dúvidas, esclarecimentos ou solicitações relativas à privacidade e proteção de dados pessoais sob a LGPD (Lei nº 13.709/2018), entre em contato com nossa equipe pelo e-mail:{' '}
               <a href="mailto:brasilportalvip@gmail.com" className="text-[#D4AF37] underline">
                 brasilportalvip@gmail.com
               </a>.
+            </p>
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              *Nota legal sobre retenção: Em caso de solicitação de exclusão, seus dados de identificação, perfil e diário espiritual serão imediatamente apagados de nossos servidores. Registros contábeis e fiscais de transações de crédito são retidos em formato anonimizado estritamente para o cumprimento de obrigações legais e regulatórias (Marco Civil da Internet, Lei nº 12.965/2014, e art. 16, I da LGPD).
             </p>
           </section>
         </div>

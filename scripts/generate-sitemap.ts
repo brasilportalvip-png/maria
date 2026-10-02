@@ -5,25 +5,27 @@ const BASE_URL = 'https://maria-padilha-rainha-das-7-encruzil.vercel.app';
 
 interface SitemapEntry {
   loc: string;
+  lastmod?: string;
   changefreq: 'daily' | 'weekly' | 'monthly';
   priority: number;
 }
 
+// Strictly audited public routes with authentic content lastmod
 const PUBLIC_ROUTES: SitemapEntry[] = [
   { loc: '/', changefreq: 'daily', priority: 1.0 },
-  { loc: '/privacidade', changefreq: 'monthly', priority: 0.5 },
-  { loc: '/termos', changefreq: 'monthly', priority: 0.5 },
+  { loc: '/privacidade', lastmod: '2026-06-01', changefreq: 'monthly', priority: 0.5 },
+  { loc: '/termos', lastmod: '2026-06-01', changefreq: 'monthly', priority: 0.5 },
 ];
 
 export function generateSitemapXml(): string {
-  const today = new Date().toISOString().split('T')[0];
-
-  const xmlEntries = PUBLIC_ROUTES.map((route) => `  <url>
-    <loc>${BASE_URL}${route.loc}</loc>
-    <lastmod>${today}</lastmod>
+  const xmlEntries = PUBLIC_ROUTES.map((route) => {
+    const lastmodTag = route.lastmod ? `\n    <lastmod>${route.lastmod}</lastmod>` : '';
+    return `  <url>
+    <loc>${BASE_URL}${route.loc}</loc>${lastmodTag}
     <changefreq>${route.changefreq}</changefreq>
     <priority>${route.priority.toFixed(1)}</priority>
-  </url>`).join('\n');
+  </url>`;
+  }).join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

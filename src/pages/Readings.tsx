@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { 
   Compass, Coins, Calendar, User, FileText, ChevronRight, HelpCircle, Check, Printer, ArrowLeft, RefreshCw, AlertTriangle
 } from 'lucide-react';
+import { ReadingViewer } from '../components/ReadingViewer';
 
 export const Readings: React.FC = () => {
   const { user, history, apiFetch, setUserCredits, addHistoryItem } = useApp();
@@ -17,10 +18,11 @@ export const Readings: React.FC = () => {
   const [readingResult, setReadingResult] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Fields for a specific person in romantic queries
+  // Fields for a specific person involved in the query
   const [hasSpecificPerson, setHasSpecificPerson] = useState(false);
   const [specificPersonName, setSpecificPersonName] = useState('');
   const [specificPersonDate, setSpecificPersonDate] = useState('');
+  const [specificPersonRelationship, setSpecificPersonRelationship] = useState('outro');
 
   // If viewing a history item, load it!
   useEffect(() => {
@@ -335,12 +337,9 @@ export const Readings: React.FC = () => {
           <div id="spiritual_report_paper" className="prose prose-invert max-w-none text-xs md:text-sm text-gray-100 space-y-4 font-sans leading-relaxed">
             <div className="text-center mb-8 flex flex-col items-center">
               <div className="w-20 h-20 rounded-full overflow-hidden border border-[#D4AF37]/50 shadow-[0_0_15px_rgba(212,175,55,0.4)] mb-3">
-                <video
-                  src="https://portalvipbrasil.com.br/wp-content/uploads/2026/06/Maria-Padilha-Rainha-Das-7-Encruzilhadas-Portas-Das-Pombo-giras.mp4"
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
+                <img
+                  src="/image/Maria Padilha Logo.png"
+                  alt="Maria Padilha"
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -350,12 +349,13 @@ export const Readings: React.FC = () => {
               <span className="text-[10px] font-mono text-gray-400">Canalizado em {new Date().toLocaleDateString('pt-BR')}</span>
             </div>
 
-            {/* Injected HTML containing the parsed reading output */}
+            {/* Structured reading output without dangerouslySetInnerHTML */}
             <div 
               id="reading_output_html" 
               className="space-y-4 border border-red-950/40 rounded-xl bg-red-950/5 p-4 md:p-6"
-              dangerouslySetInnerHTML={{ __html: readingResult }} 
-            />
+            >
+              <ReadingViewer content={readingResult || ''} />
+            </div>
           </div>
 
           <div className="mt-8 border-t border-gray-900 pt-4 text-center">
@@ -378,7 +378,7 @@ export const Readings: React.FC = () => {
             </p>
           </div>
 
-          {/* Specific Person Romantic Query Options inputs */}
+          {/* Specific Person Involved in Query */}
           <div className="mb-8 max-w-xl mx-auto rounded-xl border border-red-900/20 bg-red-950/10 p-5">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -390,7 +390,7 @@ export const Readings: React.FC = () => {
               />
               <div className="flex flex-col text-left">
                 <span className="text-xs font-bold text-gray-200">Esta consulta envolve uma pessoa específica?</span>
-                <span className="text-[10px] text-gray-400">Marque se você for perguntar sobre amor, sintonia ou futuro com alguém.</span>
+                <span className="text-[10px] text-gray-400">Marque se você for perguntar sobre alguém (família, trabalho, sociedade, amor ou outra relação).</span>
               </div>
             </label>
 
@@ -399,16 +399,16 @@ export const Readings: React.FC = () => {
                 id="specific_person_fields"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
-                className="mt-4 pt-4 border-t border-red-950/40 grid grid-cols-1 sm:grid-cols-2 gap-3"
+                className="mt-4 pt-4 border-t border-red-950/40 grid grid-cols-1 sm:grid-cols-3 gap-3"
               >
                 <div>
-                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-300 mb-1">Nome Completo do Ser Amado</label>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-300 mb-1">Nome da Pessoa</label>
                   <div className="relative">
                     <User className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-500" />
                     <input
                       id="specific_person_name_input"
                       type="text"
-                      placeholder="Nome do parceiro(a)"
+                      placeholder="Nome completo"
                       value={specificPersonName}
                       onChange={(e) => setSpecificPersonName(e.target.value)}
                       className="w-full rounded-md border border-gray-800 bg-gray-950 pl-8 pr-3 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
@@ -418,7 +418,7 @@ export const Readings: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-300 mb-1">Data de Nascimento (Opcional)</label>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-300 mb-1">Data de Nascimento (se conhecida)</label>
                   <div className="relative">
                     <Calendar className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-500" />
                     <input
@@ -429,6 +429,28 @@ export const Readings: React.FC = () => {
                       className="w-full rounded-md border border-gray-800 bg-gray-950 pl-8 pr-3 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-300 mb-1">Relação com a Questão</label>
+                  <select
+                    id="specific_person_relation_select"
+                    value={specificPersonRelationship}
+                    onChange={(e) => setSpecificPersonRelationship(e.target.value)}
+                    className="w-full rounded-md border border-gray-800 bg-gray-950 px-3 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+                  >
+                    <option value="amor">Amor / Afeto</option>
+                    <option value="ex">Ex-parceiro(a)</option>
+                    <option value="conjuge">Cônjuge</option>
+                    <option value="familia">Família</option>
+                    <option value="amizade">Amizade</option>
+                    <option value="sociedade">Sociedade / Parceria</option>
+                    <option value="trabalho">Trabalho / Colega</option>
+                    <option value="chefe">Chefe / Superior</option>
+                    <option value="funcionario">Funcionário</option>
+                    <option value="cliente">Cliente / Negócios</option>
+                    <option value="outro">Outro</option>
+                  </select>
                 </div>
               </motion.div>
             )}
@@ -445,12 +467,9 @@ export const Readings: React.FC = () => {
           {isLoading ? (
             <div id="reading_loading_screen" className="text-center py-12 bg-black/80 rounded-xl border border-[#D4AF37]/30 flex flex-col items-center shadow-lg">
               <div className="w-28 h-28 rounded-full overflow-hidden border border-[#D4AF37]/60 shadow-[0_0_20px_rgba(212,175,55,0.4)] mb-4">
-                <video
-                  src="https://portalvipbrasil.com.br/wp-content/uploads/2026/06/Maria-Padilha-Rainha-Das-7-Encruzilhadas-Portas-Das-Pombo-giras.mp4"
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
+                <img
+                  src="/image/Maria Padilha Logo.png"
+                  alt="Maria Padilha"
                   className="w-full h-full object-cover"
                 />
               </div>

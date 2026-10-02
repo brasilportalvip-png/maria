@@ -7,6 +7,7 @@ export interface AuthenticatedRequest extends Request {
   authToken?: string;
   correlationId?: string;
   clientIp?: string;
+  hasAdminClaim?: boolean;
 }
 
 export function getClientIp(req: Request): string {
@@ -56,7 +57,7 @@ export async function verifyUserToken(authHeader?: string): Promise<{ uid: strin
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next?: NextFunction): Promise<boolean> {
   const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
   req.clientIp = getClientIp(req);
-  req.correlationId = (req.headers['x-correlation-id'] as string) || `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  req.correlationId = (req.headers['x-correlation-id'] as string) || `req_${crypto.randomUUID()}`;
 
   const authHeader = req.headers['authorization'];
   const tokenPayload = await verifyUserToken(authHeader);
@@ -130,6 +131,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     }
 
     req.user = data;
+    req.hasAdminClaim = Boolean(tokenPayload.admin);
   } catch (error: any) {
     console.error('[requireAuth] Error fetching user doc:', error);
     res.status(500).json({
@@ -150,9 +152,8 @@ export async function requireAdmin(req: AuthenticatedRequest, res: Response, nex
   const isAuthed = await requireAuth(req, res);
   if (!isAuthed) return false;
 
-  const user = req.user;
-  // Admin is strictly verified via Custom Claim or verified admin role, NEVER hardcoded email
-  const isAdmin = user && user.role === 'admin';
+  // Admin access is cryptographically restricted to Firebase Custom Claim (admin: true)
+  const isAdmin = req.hasAdminClaim === true;
 
   if (!isAdmin) {
     res.status(403).json({

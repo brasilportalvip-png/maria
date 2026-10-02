@@ -20,9 +20,8 @@ export const Dashboard: React.FC = () => {
         className="w-full max-w-2xl rounded-3xl border border-red-800/40 bg-black/80 p-6 text-center shadow-[0_0_35px_rgba(185,28,28,0.35)] backdrop-blur-xl"
       >
         <img
-          src="https://portalvipbrasil.com.br/wp-content/uploads/2026/06/ChatGPT-Image-24-de-jun.-de-2026-11_29_55.png"
+          src="/image/Maria Padilha Logo.png"
           alt="Maria Padilha"
-          referrerPolicy="no-referrer"
           className="mx-auto mb-4 h-24 w-24 rounded-full border border-[#D4AF37]/60 object-cover shadow-[0_0_25px_rgba(212,175,55,0.35)]"
         />
 

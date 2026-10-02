@@ -2,12 +2,24 @@ import type { Request, Response } from 'express';
 import { adminAuth, firestore } from './_firebaseAdmin.js';
 import { RegisterRequestSchema } from './validation/schemas.js';
 import { getClientIp } from './middleware/auth.js';
+import { checkRateLimit } from './services/rateLimiter.js';
 import { logger } from './services/logger.js';
 import type { UserProfile, CreditLedgerEntry } from '../src/types/spiritual.js';
 
 export default async function handler(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método não permitido.' });
+  }
+
+  const clientIp = getClientIp(req);
+  const rateLimit = await checkRateLimit(`reg_${clientIp}`, 5, 60000);
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: 'Muitas tentativas de cadastro a partir deste IP. Aguarde um minuto.',
+      code: 'RATE_LIMIT_EXCEEDED',
+    });
   }
 
   const parseResult = RegisterRequestSchema.safeParse(req.body);
@@ -19,7 +31,6 @@ export default async function handler(req: Request, res: Response) {
   }
 
   const data = parseResult.data;
-  const clientIp = getClientIp(req);
   const normalizedEmail = data.email.toLowerCase().trim();
 
   try {
@@ -91,7 +102,7 @@ export default async function handler(req: Request, res: Response) {
     // Save user doc and credit ledger transactionally
     await firestore.runTransaction(async (transaction: any) => {
       const userRef = firestore.collection('users').doc(uid);
-      const ledgerId = `led_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const ledgerId = `led_${crypto.randomUUID()}`;
       const ledgerRef = firestore.collection('credit_ledger').doc(ledgerId);
 
       const ledgerEntry: CreditLedgerEntry = {

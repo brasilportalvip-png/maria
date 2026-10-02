@@ -4,6 +4,7 @@ import { requireAuth, type AuthenticatedRequest } from './middleware/auth.js';
 import { CreatePaymentRequestSchema } from './validation/schemas.js';
 import { firestore } from './_firebaseAdmin.js';
 import { logger } from './services/logger.js';
+import { checkRateLimit } from './services/rateLimiter.js';
 import type { PaymentOrder } from '../src/types/spiritual.js';
 
 export const SERVER_PLANS: Record<string, { id: string; name: string; price: number; credits: number }> = {
@@ -23,6 +24,15 @@ export default async function handler(req: Request, res: Response) {
 
   const user = authReq.user!;
 
+  // Distributed Rate Limiting: 10 payment intents per minute per user
+  const rateLimit = await checkRateLimit(`pay_${user.uid}`, 10, 60000);
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: 'Muitas tentativas de criação de pagamento. Aguarde um minuto.',
+      code: 'RATE_LIMIT_EXCEEDED',
+    });
+  }
+
   // Validate request body
   const parseResult = CreatePaymentRequestSchema.safeParse(req.body);
   if (!parseResult.success) {
@@ -39,7 +49,39 @@ export default async function handler(req: Request, res: Response) {
     return res.status(400).json({ error: 'Plano selecionado não existe na tabela do servidor.' });
   }
 
-  const orderId = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  if (!firestore) {
+    return res.status(503).json({
+      error: 'Banco de dados indisponível para registro financeiro.',
+      code: 'SERVICE_UNAVAILABLE',
+    });
+  }
+
+  // Check payment idempotency: if order with this idempotencyKey exists for user, return it
+  if (idempotencyKey) {
+    try {
+      const existingSnap = await firestore
+        .collection('payment_orders')
+        .where('uid', '==', user.uid)
+        .where('idempotencyKey', '==', idempotencyKey)
+        .limit(1)
+        .get();
+
+      if (!existingSnap.empty) {
+        const existingOrder = existingSnap.docs[0].data() as PaymentOrder;
+        logger.info('Returning existing payment order due to idempotencyKey', { idempotencyKey, orderId: existingOrder.orderId });
+        return res.status(200).json({
+          orderId: existingOrder.orderId,
+          init_point: existingOrder.initPoint || existingOrder.sandboxInitPoint,
+          sandbox_init_point: existingOrder.sandboxInitPoint,
+          isExisting: true,
+        });
+      }
+    } catch (e) {
+      logger.warn('Failed to query payment idempotency:', e);
+    }
+  }
+
+  const orderId = `ord_${crypto.randomUUID()}`;
   const orderRecord: PaymentOrder = {
     orderId,
     uid: user.uid,
@@ -55,23 +97,37 @@ export default async function handler(req: Request, res: Response) {
     updatedAt: new Date().toISOString(),
   };
 
+  // Fail-closed: Internal order MUST be persisted before creating gateway payment
   try {
     await firestore.collection('payment_orders').doc(orderId).set(orderRecord);
-  } catch (err) {
-    logger.warn('Failed to save payment_order in Firestore, proceeding with preference creation', { orderId, error: String(err) });
+  } catch (err: any) {
+    logger.error('FAIL-CLOSED: Payment order could not be saved to Firestore', { orderId, error: String(err) });
+    return res.status(500).json({
+      error: 'Não foi possível registrar o pedido no banco de dados. O pagamento foi interrompido com segurança.',
+      code: 'ORDER_PERSISTENCE_FAILED',
+    });
   }
 
   const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
   const siteUrl = process.env.PUBLIC_SITE_URL || process.env.APP_BASE_URL || 'http://localhost:3000';
+  const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
 
   if (!accessToken || accessToken === 'MY_ACCESS_TOKEN') {
-    // Graceful test/sandbox simulation when MP credentials are not yet provisioned
-    logger.warn('MERCADO_PAGO_ACCESS_TOKEN not configured. Returning test sandbox init_point.');
-    return res.status(200).json({
-      orderId,
-      init_point: `${siteUrl}/credits?mock_order=${orderId}&plan=${plan.id}`,
-      sandbox_init_point: `${siteUrl}/credits?mock_order=${orderId}&plan=${plan.id}`,
-      isMock: true,
+    // Only permit simulation in explicit test or local environment
+    if (isTestEnv || process.env.ENABLE_MOCK_PAYMENT === 'true') {
+      logger.warn('MERCADO_PAGO_ACCESS_TOKEN not configured in test/local mode. Returning sandbox init_point.');
+      return res.status(200).json({
+        orderId,
+        init_point: `${siteUrl}/credits?mock_order=${orderId}&plan=${plan.id}`,
+        sandbox_init_point: `${siteUrl}/credits?mock_order=${orderId}&plan=${plan.id}`,
+        isMock: true,
+      });
+    }
+
+    logger.error('PRODUCTION FAIL-CLOSED: MERCADO_PAGO_ACCESS_TOKEN is missing or placeholder in production.', new Error('MISSING_ACCESS_TOKEN'));
+    return res.status(503).json({
+      error: 'Gateway de pagamentos do Mercado Pago temporariamente indisponível no servidor.',
+      code: 'GATEWAY_CONFIG_MISSING',
     });
   }
 
@@ -113,9 +169,11 @@ export default async function handler(req: Request, res: Response) {
 
     const mpRes = await preferenceClient.create({ body: preferenceBody });
 
-    // Update order with provider preference ID
+    // Update order with provider preference ID and links
     await firestore.collection('payment_orders').doc(orderId).set({
       providerPreferenceId: mpRes.id,
+      initPoint: mpRes.init_point,
+      sandboxInitPoint: mpRes.sandbox_init_point,
       updatedAt: new Date().toISOString(),
     }, { merge: true });
 

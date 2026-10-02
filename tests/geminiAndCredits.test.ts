@@ -5,7 +5,9 @@ import { MODEL_CHAIN } from '../api/services/geminiService.js';
 describe('Credit Service & Gemini Resilience (Requisitos 7, 8, 13, 14, 76)', () => {
   it('A cadeia de modelos Gemini deve priorizar gemini-3.8-flash conforme especificação oficial', () => {
     expect(MODEL_CHAIN[0]).toBe('gemini-3.8-flash');
-    expect(MODEL_CHAIN.length).toBeGreaterThanOrEqual(3);
+    expect(MODEL_CHAIN[1]).toBe('gemini-3.7-flash');
+    expect(MODEL_CHAIN[2]).toBe('gemini-3.6-flash');
+    expect(MODEL_CHAIN.length).toBe(3);
   });
 
   it('deve debitar créditos e impedir débito se o saldo for insuficiente', async () => {

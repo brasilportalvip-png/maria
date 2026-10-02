@@ -7,6 +7,8 @@ import { logger } from './services/logger.js';
 import type { CreditLedgerEntry } from '../src/types/spiritual.js';
 
 export default async function handler(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
   const authReq = req as AuthenticatedRequest;
   const isAdmin = await requireAdmin(authReq, res);
   if (!isAdmin) return;
@@ -39,7 +41,7 @@ export default async function handler(req: Request, res: Response) {
       await firestore.collection('users').doc(targetUid).set({ credits: newBalance }, { merge: true });
 
       const ledgerEntry: CreditLedgerEntry = {
-        id: `adm_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        id: `adm_${crypto.randomUUID()}`,
         uid: targetUid,
         type: 'admin_adjustment',
         amount: creditsDelta,
