@@ -59,7 +59,7 @@ export const UpdateNatalSchema = z.object({
 
 export const CreatePaymentRequestSchema = z.object({
   planId: z.enum(['prata', 'ouro', 'diamante']),
-  idempotencyKey: z.string().max(100).optional(),
+  idempotencyKey: z.string().min(1, 'idempotencyKey é obrigatória para criação de pagamento').max(100),
 });
 
 export const UpdateCreditsSchema = z.object({

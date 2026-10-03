@@ -3,6 +3,7 @@ import { requireAuth, type AuthenticatedRequest } from './middleware/auth.js';
 import { DeleteAccountSchema } from './validation/schemas.js';
 import { firestore, adminAuth } from './_firebaseAdmin.js';
 import { logger } from './services/logger.js';
+import { clearRateLimitForUid } from './services/rateLimiter.js';
 
 export default async function handler(req: Request, res: Response) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -101,6 +102,36 @@ export default async function handler(req: Request, res: Response) {
       } catch {
         // ignore
       }
+
+      // 3b. LGPD: Permanently purge technical idempotency and operation documents carrying user UID
+      try {
+        const idempDocs = await firestore.collection('reading_idempotency').where('uid', '==', user.uid).get();
+        for (const doc of idempDocs.docs) {
+          await doc.ref.delete();
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        const creditOpDocs = await firestore.collection('credit_operations').where('uid', '==', user.uid).get();
+        for (const doc of creditOpDocs.docs) {
+          await doc.ref.delete();
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        const oracleOpDocs = await firestore.collection('oracle_operations').where('uid', '==', user.uid).get();
+        for (const doc of oracleOpDocs.docs) {
+          await doc.ref.delete();
+        }
+      } catch {
+        // ignore
+      }
+
+      clearRateLimitForUid(user.uid);
 
       // 4. True anonymization of tax/financial records (Art. 16, I e II da LGPD):
       // Retain financial ledger entries strictly for tax compliance, but detach the user UID and PII irreversibly.

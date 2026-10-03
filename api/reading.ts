@@ -10,7 +10,16 @@ import { throwBuzios } from '../src/oraculos/buziosEngine.js';
 import { calculateNumerology } from '../src/oraculos/numerologyEngine.js';
 import { calculateCabala } from '../src/oraculos/cabalaEngine.js';
 import { calculateAstrology } from '../src/oraculos/astrologyEngine.js';
-import { saveOracleReading, getOracleReadingById, getReadingIdByIdempotency } from '../src/oraculos/readingStorage.js';
+import {
+  saveOracleReading,
+  getOracleReadingById,
+  getReadingIdByIdempotency,
+} from '../src/oraculos/readingStorage.js';
+import {
+  acquireOperation,
+  completeOperation,
+  failOperation,
+} from './services/operationService.js';
 import { checkRateLimit } from './services/rateLimiter.js';
 import { logger } from './services/logger.js';
 import type { OracleReadingRecord, OracleRawResult, NatalData, ParticipantRole } from '../src/types/spiritual.js';
@@ -66,7 +75,7 @@ export default async function handler(req: Request, res: Response) {
     readingId,
   } = parseResult.data;
 
-  // 1. Check if readingId or idempotencyKey already exists (F5 or reload should NOT redraw cards!)
+  // 1. Check if readingId was provided (historical reading retrieval - free, no draw, no debit)
   if (readingId) {
     const existing = await getOracleReadingById(user.uid, readingId);
     if (existing) {
@@ -85,18 +94,27 @@ export default async function handler(req: Request, res: Response) {
     }
   }
 
-  const existingId = await getReadingIdByIdempotency(user.uid, idempotencyKey);
-  if (existingId) {
-    const existing = await getOracleReadingById(user.uid, existingId);
-    if (existing) {
-      return res.status(200).json({
-        reading: existing.interpretationHtml,
-        readingRecord: existing,
-        type: existing.oracleType,
-        aiUsed: existing.modelUsed !== 'offline-local-simulator',
-        isCached: true,
-      });
-    }
+  // IdempotencyKey is strictly mandatory for any new paid reading consultation
+  if (!idempotencyKey || typeof idempotencyKey !== 'string' || idempotencyKey.trim().length === 0) {
+    return res.status(400).json({
+      error: 'idempotencyKey é obrigatória para realizar uma consulta oracular.',
+      code: 'MISSING_IDEMPOTENCY_KEY',
+    });
+  }
+
+  // Atomic Operation Lock acquired BEFORE debit, draw, or Gemini
+  const opCheck = await acquireOperation(user.uid, idempotencyKey, 'reading');
+  if (opCheck.status === 'completed') {
+    return res.status(200).json({
+      ...opCheck.operation.resultPayload,
+      isCached: true,
+    });
+  }
+  if (opCheck.status === 'processing') {
+    return res.status(409).json({
+      error: 'Esta consulta oracular já está sendo processada. Por favor, aguarde.',
+      code: 'OPERATION_IN_PROGRESS',
+    });
   }
 
   // REGRA DO PROPRIETÁRIO: Cada consulta oracular paga custa exatamente 5 créditos
@@ -104,6 +122,7 @@ export default async function handler(req: Request, res: Response) {
 
   // Pre-check balance before execution
   if (user.credits < creditCost) {
+    await failOperation(user.uid, idempotencyKey, 'INSUFFICIENT_CREDITS');
     return res.status(402).json({
       error: INSUFFICIENT_CREDITS_MESSAGE,
       code: 'INSUFFICIENT_CREDITS',
@@ -118,9 +137,10 @@ export default async function handler(req: Request, res: Response) {
       amount: creditCost,
       type: 'reading',
       description: `Consulta oracular: ${type}`,
-      idempotencyKey: idempotencyKey || `read_${user.uid}_${crypto.randomUUID()}`,
+      idempotencyKey,
     });
   } catch (err: any) {
+    await failOperation(user.uid, idempotencyKey, err.message || 'DEBIT_FAILED');
     if (err.message === 'INSUFFICIENT_CREDITS') {
       return res.status(402).json({
         error: INSUFFICIENT_CREDITS_MESSAGE,
@@ -296,7 +316,23 @@ ${spiritualAI.systemContext}
     timezone: userTimezone,
   };
 
-  await saveOracleReading(readingRecord, idempotencyKey);
+  try {
+    await saveOracleReading(readingRecord, idempotencyKey);
+  } catch (saveErr) {
+    logger.error('Failed to save oracle reading in /api/reading, executing refund', saveErr, correlationId);
+    await failOperation(user.uid, idempotencyKey, 'SAVE_READING_FAILED', debitResult.ledgerId);
+    await refundCredits({
+      uid: user.uid,
+      amount: creditCost,
+      reason: 'Falha técnica ao persistir leitura oracular — estorno automático integral',
+      referenceId: debitResult.ledgerId,
+    }).catch(() => null);
+
+    return res.status(500).json({
+      error: 'Não foi possível salvar a leitura oracular. Seus créditos foram estornados integralmente.',
+      code: 'SAVE_READING_FAILED',
+    });
+  }
 
   recordSpiritualEvent({
     uid: user.uid,
@@ -307,13 +343,22 @@ ${spiritualAI.systemContext}
     relationType: assignedRole,
   }).catch(() => {});
 
-  return res.status(200).json({
+  const responsePayload = {
     reading: interpretationHtml,
     readingRecord,
     type,
     aiUsed: modelUsed !== 'offline-local-simulator',
     newCreditsBalance: debitResult.newBalance,
+  };
+
+  await completeOperation(user.uid, idempotencyKey, {
+    readingId: newReadingId,
+    ledgerId: debitResult.ledgerId,
+    rawOracleResult: rawResult,
+    resultPayload: responsePayload,
   });
+
+  return res.status(200).json(responsePayload);
 }
 
 function buildStructuredLocalInterpretation(
@@ -357,7 +402,7 @@ function buildStructuredLocalInterpretation(
     body += `<h4>🌙 Astrologia e Horário Cósmico:</h4>
     <p>Sol em: <strong>${raw.astrology.sunSign}</strong> (Elemento ${raw.astrology.element}, Modo ${raw.astrology.modality})<br/>
     Fase da Lua: <strong>${raw.astrology.lunarPhase}</strong> — ${raw.astrology.lunarPhaseDescription}<br/>
-    Hora Planetária Regente: <strong>${raw.astrology.planetaryHourRuler}</strong></p>`;
+    Hora Planetária Regente: <strong>${raw.astrology.planetaryHourRuler ? raw.astrology.planetaryHourRuler : 'não calculada porque a hora de nascimento não foi informada'}</strong></p>`;
   }
 
   return `

@@ -95,7 +95,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const loadUserData = async (uid: string) => {
-    // 1. Load History
+    // Purge any legacy unencrypted localStorage data
+    try {
+      localStorage.removeItem(`mp_history_${uid}`);
+      localStorage.removeItem(`mp_diary_${uid}`);
+    } catch {}
+
+    // 1. Load History exclusively from authoritative database
     try {
       const histSnap = await getDocs(query(collection(db, 'readings'), where('uid', '==', uid)));
       if (!histSnap.empty) {
@@ -114,15 +120,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         setHistory(list);
       } else {
-        const cached = localStorage.getItem(`mp_history_${uid}`);
-        if (cached) setHistory(JSON.parse(cached));
+        setHistory([]);
       }
     } catch {
-      const cached = localStorage.getItem(`mp_history_${uid}`);
-      if (cached) setHistory(JSON.parse(cached));
+      setHistory([]);
     }
 
-    // 2. Load Diary
+    // 2. Load Diary exclusively from authoritative database
     try {
       const diarySnap = await getDocs(query(collection(db, 'diary'), where('userId', '==', uid)));
       if (!diarySnap.empty) {
@@ -132,12 +136,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }));
         setDiary(list);
       } else {
-        const cached = localStorage.getItem(`mp_diary_${uid}`);
-        if (cached) setDiary(JSON.parse(cached));
+        setDiary([]);
       }
     } catch {
-      const cached = localStorage.getItem(`mp_diary_${uid}`);
-      if (cached) setDiary(JSON.parse(cached));
+      setDiary([]);
     }
   };
 

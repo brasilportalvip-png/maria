@@ -116,7 +116,7 @@ export const PrivacyPolicy: React.FC = () => {
               Os dados são armazenados em infraestrutura segura em nuvem (Google Firebase e Vercel), protegidos por regras estritas de segurança de acesso, autenticação de sessão e criptografia em trânsito (HTTPS).
             </p>
             <p className="text-xs text-gray-300 leading-relaxed">
-              <strong>Critério de Retenção e Exclusão (Art. 16 da LGPD):</strong> Ao solicitar a exclusão de conta, seus dados cadastrais, diário espiritual, registros de consultas, perguntas e perfis espirituais são <strong>permanentemente eliminados</strong>. Somente registros puramente financeiros e contábeis de pagamento são conservados pelo prazo legal estrito (cumprimento de obrigação legal/fiscal), sendo <strong>irreversivelmente desvinculados de seu identificador pessoal (UID)</strong> e de qualquer dado de contato, impossibilitando sua identificação futura.
+              <strong>Critério de Retenção e Exclusão (Art. 16 da LGPD):</strong> Ao solicitar a exclusão de conta, seus dados cadastrais, diário espiritual, registros de consultas, perguntas, perfis espirituais e registros técnicos de operação e idempotência vinculados ao seu identificador são <strong>permanentemente eliminados</strong>. Somente registros fiscais e contábeis de transação são conservados pelo prazo legal estrito (cumprimento de obrigação legal/fiscal), sendo <strong>irreversivelmente desvinculados de seu identificador pessoal (UID)</strong> e de qualquer dado de contato, impossibilitando sua identificação futura.
             </p>
           </section>
 

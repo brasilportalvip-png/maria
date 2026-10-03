@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { firestore } from '../_firebaseAdmin.js';
 import type { Request, Response, NextFunction } from 'express';
 import { getClientIp, type AuthenticatedRequest } from '../middleware/auth.js';
@@ -9,6 +10,13 @@ interface MemoryEntry {
 
 const memoryStore = new Map<string, MemoryEntry>();
 const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+
+export function clearRateLimitForUid(uid: string): void {
+  const prefixes = [`chat_${uid}`, `read_${uid}`, `love_${uid}`, `pay_${uid}`, uid];
+  for (const p of prefixes) {
+    memoryStore.delete(p);
+  }
+}
 
 export async function checkRateLimit(
   identifier: string,
@@ -47,9 +55,11 @@ export async function checkRateLimit(
   }
 
   // Serverless distributed rate limiter via Firestore atomic transaction
+  // Use irreversible SHA-256 hash of identifier to prevent storing raw UIDs or IPs in rate limit document IDs
   try {
     const bucketIndex = Math.floor(now / windowMs);
-    const docId = `rl_${identifier.replace(/[^a-zA-Z0-9_-]/g, '_')}_${bucketIndex}`;
+    const hashedId = crypto.createHash('sha256').update(identifier).digest('hex').slice(0, 32);
+    const docId = `rl_${hashedId}_${bucketIndex}`;
     const docRef = firestore.collection('rate_limits').doc(docId);
     const resetTime = (bucketIndex + 1) * windowMs;
     const resetInMs = Math.max(0, resetTime - now);

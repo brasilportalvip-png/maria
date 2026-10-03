@@ -17,6 +17,11 @@ import {
 import {
   recordSpiritualEvent,
 } from './services/spiritualProfileService.js';
+import {
+  acquireOperation,
+  completeOperation,
+  failOperation,
+} from './services/operationService.js';
 import type { OracleReadingRecord, NatalData } from '../src/types/spiritual.js';
 import { z } from 'zod';
 
@@ -24,7 +29,7 @@ const LoveCompatibilityRequestSchema = z.object({
   fullName2: z.string().min(2, 'Nome da segunda pessoa é obrigatório').max(150),
   birthDate2: z.string().min(8, 'Data de nascimento da segunda pessoa é obrigatória'),
   birthTime2: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Horário inválido (use HH:mm)').optional().or(z.literal('')).nullable(),
-  idempotencyKey: z.string().max(100).optional(),
+  idempotencyKey: z.string().min(1, 'idempotencyKey é obrigatória para a comparação amorosa').max(100),
 });
 
 export default async function handler(req: Request, res: Response) {
@@ -67,24 +72,24 @@ export default async function handler(req: Request, res: Response) {
     return res.status(400).json({ error: dateErr.message });
   }
 
-  // 1. Idempotency Check: if already processed for this idempotencyKey, return cached result
-  if (idempotencyKey) {
-    const existingId = await getReadingIdByIdempotency(user.uid, idempotencyKey);
-    if (existingId) {
-      const existing = await getOracleReadingById(user.uid, existingId);
-      if (existing) {
-        return res.status(200).json({
-          reading: existing.interpretationHtml,
-          synastryReport: existing.rawResult?.customDetails?.synastryReport,
-          readingRecord: existing,
-          isCached: true,
-        });
-      }
-    }
+  // 1. Atomic Operation Idempotency Lock: strictly acquired BEFORE debit, draw, or Gemini
+  const opCheck = await acquireOperation(user.uid, idempotencyKey, 'love_compatibility');
+  if (opCheck.status === 'completed') {
+    return res.status(200).json({
+      ...opCheck.operation.resultPayload,
+      isCached: true,
+    });
+  }
+  if (opCheck.status === 'processing') {
+    return res.status(409).json({
+      error: 'Esta sinastria amorosa já está sendo processada. Por favor, aguarde.',
+      code: 'OPERATION_IN_PROGRESS',
+    });
   }
 
   // 2. Pre-check user credit balance
   if (user.credits < LOVE_COMPATIBILITY_COST) {
+    await failOperation(user.uid, idempotencyKey, 'INSUFFICIENT_CREDITS');
     return res.status(402).json({
       error: INSUFFICIENT_CREDITS_MESSAGE,
       code: 'INSUFFICIENT_CREDITS',
@@ -104,6 +109,7 @@ export default async function handler(req: Request, res: Response) {
       idempotencyKey,
     });
   } catch (debitErr: any) {
+    await failOperation(user.uid, idempotencyKey, debitErr.message || 'DEBIT_FAILED');
     return res.status(402).json({
       error: debitErr.message || 'Falha ao debitar créditos para a sinastria.',
       code: 'DEBIT_FAILED',
@@ -193,6 +199,7 @@ DIRETRIZES FUNDAMENTAIS:
   // 7. If Gemini failed completely, issue automatic single refund
   if (!geminiResult.text || geminiResult.modelUsed === 'all_models_failed' || geminiResult.modelUsed === 'offline-local-simulator') {
     logger.warn('AI interpretation failed for love compatibility, executing single refund of 5 credits', { uid: user.uid, readingId, ledgerId: debitResult.ledgerId });
+    await failOperation(user.uid, idempotencyKey, 'AI_INTERPRETATION_FAILED', debitResult.ledgerId);
     const refundRes = await refundCredits({
       uid: user.uid,
       amount: LOVE_COMPATIBILITY_COST,
@@ -236,6 +243,7 @@ DIRETRIZES FUNDAMENTAIS:
     await saveOracleReading(readingRecord, idempotencyKey);
   } catch (saveErr) {
     logger.error('Failed to save oracle reading for love compatibility, executing refund', saveErr, correlationId);
+    await failOperation(user.uid, idempotencyKey, 'SAVE_READING_FAILED', debitResult.ledgerId);
     const refundRes = await refundCredits({
       uid: user.uid,
       amount: LOVE_COMPATIBILITY_COST,
@@ -260,11 +268,23 @@ DIRETRIZES FUNDAMENTAIS:
     relationType: 'amor',
   }).catch(() => {});
 
-  return res.status(200).json({
+  const responsePayload = {
     reading: geminiResult.text,
     synastryReport,
     readingRecord,
     newCreditsBalance: debitResult.newBalance,
     creditsCost: LOVE_COMPATIBILITY_COST,
+  };
+
+  await completeOperation(user.uid, idempotencyKey, {
+    readingId,
+    ledgerId: debitResult.ledgerId,
+    rawOracleResult: {
+      tarotSpread: synastryReport.tarotSpread,
+      customDetails: { synastryReport },
+    },
+    resultPayload: responsePayload,
   });
+
+  return res.status(200).json(responsePayload);
 }
