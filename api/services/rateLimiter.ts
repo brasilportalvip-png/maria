@@ -18,8 +18,13 @@ export async function checkRateLimit(
 ): Promise<{ allowed: boolean; remaining: number; resetInMs: number }> {
   const now = Date.now();
 
-  // In test environment or when Firestore is unavailable, use fast in-memory store
+  // In test environment or local development, use memory store. In production, if Firestore is unavailable and failClosed is true, block safely.
   if (isTestEnv || !firestore) {
+    if (!isTestEnv && !firestore && failClosed) {
+      console.error('[RateLimiter] Firestore unavailable in production for failClosed endpoint:', identifier);
+      return { allowed: false, remaining: 0, resetInMs: windowMs };
+    }
+
     const entry = memoryStore.get(identifier);
     if (!entry || now > entry.resetTime) {
       memoryStore.set(identifier, {
@@ -71,7 +76,8 @@ export async function checkRateLimit(
 
       t.set(docRef, {
         count: nextCount,
-        expiresAt: new Date(resetTime).toISOString(),
+        expiresAt: new Date(resetTime),
+        expiresAtIso: new Date(resetTime).toISOString(),
       }, { merge: true });
     });
 

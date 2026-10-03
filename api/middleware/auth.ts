@@ -94,7 +94,6 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
         phone: '',
         birthDate: '1990-01-01',
         birthTime: '12:00',
-        city: 'São Paulo',
         timezone: 'America/Sao_Paulo',
         credits: 10,
         isBlocked: false,

@@ -96,7 +96,7 @@ export const PrivacyPolicy: React.FC = () => {
             <h2 className="font-serif text-base font-bold text-[#D4AF37] mb-2">2. Dados Pessoais Coletados e Finalidade</h2>
             <ul className="list-disc pl-5 space-y-1">
               <li><strong>Dados de Cadastro:</strong> Nome completo, e-mail e telefone para identificação e comunicação segura de acesso.</li>
-              <li><strong>Dados Natais:</strong> Data de nascimento, hora e cidade de nascimento utilizados exclusivamente como base permanente para cálculos oraculares e numerológicos do usuário.</li>
+              <li><strong>Dados Natais:</strong> Nome completo de solteiro, data de nascimento e hora de nascimento (se informada pelo usuário) utilizados exclusivamente como base permanente para cálculos oraculares e numerológicos do consulente. Cidade e localização geográfica não fazem parte dos dados natais deste portal.</li>
               <li><strong>Diário Espiritual e Histórico:</strong> Registros de sonhos, sinais e leituras anteriores solicitados pelo próprio usuário.</li>
               <li><strong>Dados Transacionais de Pagamento:</strong> Processados de forma criptografada pelo intermediador Mercado Pago. Não armazenamos números de cartão de crédito.</li>
             </ul>

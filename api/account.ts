@@ -47,17 +47,25 @@ export default async function handler(req: Request, res: Response) {
         // ignore
       }
 
+      let spiritualHistory = null;
+      try {
+        const hDoc = await firestore.collection('spiritual_history').doc(user.uid).get();
+        if (hDoc.exists) spiritualHistory = hDoc.data();
+      } catch {
+        // ignore
+      }
+
       return res.status(200).json({
         userProfile: {
           fullName: user.fullName,
           email: user.email,
           birthDate: user.birthDate,
-          birthTime: user.birthTime,
-          city: user.city,
+          birthTime: user.birthTime || null,
           credits: user.credits,
           createdAt: user.createdAt,
         },
         spiritualProfile,
+        spiritualHistory,
         readings,
         creditLedger: ledger,
         diaryEntries: diary,
@@ -81,16 +89,27 @@ export default async function handler(req: Request, res: Response) {
         phone: '',
         birthDate: '',
         birthTime: '',
-        city: '',
         credits: 0,
         isBlocked: true,
         deletedAt: new Date().toISOString(),
       }, { merge: true });
 
-      // Anonymize diary entries
+      // Delete diary entries
       const diaryDocs = await firestore.collection('diary').where('userId', '==', user.uid).get();
       for (const d of diaryDocs.docs) {
         await d.ref.delete();
+      }
+
+      // Delete readings to purge personal questions and natal data
+      const readingsDocs = await firestore.collection('readings').where('uid', '==', user.uid).get();
+      for (const r of readingsDocs.docs) {
+        await r.ref.delete();
+      }
+
+      // Anonymize payment orders (retaining financial records without personal identity)
+      const paymentDocs = await firestore.collection('payment_orders').where('uid', '==', user.uid).get();
+      for (const p of paymentDocs.docs) {
+        await p.ref.set({ userEmail: '[anonimizado@lgpd.invalid]' }, { merge: true });
       }
 
       // Delete spiritual profiles and living history

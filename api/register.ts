@@ -14,7 +14,7 @@ export default async function handler(req: Request, res: Response) {
   }
 
   const clientIp = getClientIp(req);
-  const rateLimit = await checkRateLimit(`reg_${clientIp}`, 5, 60000);
+  const rateLimit = await checkRateLimit(`reg_${clientIp}`, 5, 60000, true);
   if (!rateLimit.allowed) {
     return res.status(429).json({
       error: 'Muitas tentativas de cadastro a partir deste IP. Aguarde um minuto.',
@@ -83,8 +83,7 @@ export default async function handler(req: Request, res: Response) {
       email: normalizedEmail,
       phone: data.phone,
       birthDate: data.birthDate,
-      birthTime: data.birthTime || '',
-      city: data.city,
+      birthTime: data.birthTime || null,
       timezone: data.timezone || 'America/Sao_Paulo',
       credits: INITIAL_CREDITS,
       isBlocked: false,

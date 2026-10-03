@@ -155,7 +155,7 @@ function AppContent() {
                 Reino de Maria Padilha Rainha das 7 Encruzilhadas
               </span>
               <p className="text-[11px] text-gray-400 mt-1 max-w-md">
-                Orientação espiritual, simbólica e interpretativa. Respeito irrestrito a todas as crenças e ao livre-arbítrio.
+                Orientação espiritual e interpretativa. Respeito irrestrito a todas as crenças e ao livre-arbítrio.
               </p>
             </div>
 

@@ -1,37 +1,34 @@
+import { parseAndValidateDate } from '../utils/dateNormalizer.js';
+
 export interface AstrologyResult {
   methodVersion: string;
   sunSign: string;
   element: 'Fogo' | 'Terra' | 'Ar' | 'Água';
   modality: 'Cardinal' | 'Fixo' | 'Mutável';
-  planetaryHourRuler: string;
-  lunarPhase: string;
+  planetaryHourRuler: string | null;
+  hourKnown: boolean;
+  lunarPhase: string; // Fase Lunar do Nascimento
   lunarPhaseDescription: string;
   cosmicAdvice: string;
 }
 
 const CHALDEAN_PLANETS = ['Saturno', 'Júpiter', 'Marte', 'Sol', 'Vênus', 'Mercúrio', 'Lua'];
 
-export function calculateAstrology(birthDateStr: string, birthTimeStr?: string, timezone: string = 'America/Sao_Paulo'): AstrologyResult {
-  let day = 1;
-  let month = 1;
-  let year = 1990;
-  let hour = 12;
+export function calculateAstrology(birthDateStr: string, birthTimeStr?: string | null, timezone: string = 'America/Sao_Paulo'): AstrologyResult {
+  const { year, month, day } = parseAndValidateDate(birthDateStr);
 
-  if (birthDateStr) {
-    const parts = birthDateStr.split('-');
-    if (parts.length === 3) {
-      year = parseInt(parts[0], 10) || 1990;
-      month = parseInt(parts[1], 10) || 1;
-      day = parseInt(parts[2], 10) || 1;
+  let hour: number | null = null;
+  let hourKnown = false;
+
+  if (birthTimeStr && typeof birthTimeStr === 'string' && birthTimeStr.trim() !== '') {
+    const timeMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(birthTimeStr.trim());
+    if (timeMatch) {
+      hour = parseInt(timeMatch[1], 10);
+      hourKnown = true;
     }
   }
 
-  if (birthTimeStr) {
-    const timeParts = birthTimeStr.split(':');
-    hour = parseInt(timeParts[0], 10) || 12;
-  }
-
-  // 1. Sun Sign calculation
+  // 1. Sun Sign calculation (deterministic based solely on birth date)
   let sunSign = 'Áries';
   let element: 'Fogo' | 'Terra' | 'Ar' | 'Água' = 'Fogo';
   let modality: 'Cardinal' | 'Fixo' | 'Mutável' = 'Cardinal';
@@ -62,18 +59,21 @@ export function calculateAstrology(birthDateStr: string, birthTimeStr?: string, 
     sunSign = 'Peixes'; element = 'Água'; modality = 'Mutável';
   }
 
-  // 2. Planetary Hour Ruler (Chaldean sequence based on day of week + hour)
-  const dateObj = new Date(year, month - 1, day, hour);
-  const dayOfWeek = dateObj.getDay(); // 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
-  const dayRulers = [3, 6, 2, 5, 1, 4, 0]; // Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn in Chaldean array
-  const dayRulerIndex = dayRulers[dayOfWeek];
-  const hourIndex = (dayRulerIndex + (hour % 7)) % 7;
-  const planetaryHourRuler = CHALDEAN_PLANETS[hourIndex];
+  // 2. Planetary Hour Ruler (STRICTLY when birth time is authentically known; NEVER default to 12:00)
+  let planetaryHourRuler: string | null = null;
+  if (hourKnown && hour !== null) {
+    const dateObj = new Date(year, month - 1, day, hour);
+    const dayOfWeek = dateObj.getDay(); // 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
+    const dayRulers = [3, 6, 2, 5, 1, 4, 0]; // Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn in Chaldean array
+    const dayRulerIndex = dayRulers[dayOfWeek];
+    const hourIndex = (dayRulerIndex + (hour % 7)) % 7;
+    planetaryHourRuler = CHALDEAN_PLANETS[hourIndex];
+  }
 
-  // 3. Moon Phase calculation (synodic cycle: 29.53058867 days)
-  // Known reference new moon: 2000-01-06 18:14 UTC
+  // 3. Natal Moon Phase calculation (synodic cycle: 29.53058867 days, relative to 2000-01-06 18:14 UTC reference)
+  // Use noon of birth day only for astronomical date difference if hour unknown, preserving day-based cycle
   const refTime = new Date('2000-01-06T18:14:00Z').getTime();
-  const birthTimeMs = dateObj.getTime();
+  const birthTimeMs = new Date(year, month - 1, day, hourKnown && hour !== null ? hour : 12).getTime();
   const diffDays = (birthTimeMs - refTime) / (1000 * 60 * 60 * 24);
   const synodicMonth = 29.53058867;
   const phaseCycle = ((diffDays % synodicMonth) + synodicMonth) % synodicMonth;
@@ -103,7 +103,11 @@ export function calculateAstrology(birthDateStr: string, birthTimeStr?: string, 
     lunarPhaseDescription = 'Ciclo de renovação da alma, descanso sagrado e preparação para o novo ciclo.';
   }
 
-  const cosmicAdvice = `Nascido(a) sob a força do Sol em ${sunSign} (Elemento ${element}, Modo ${modality}), com regência da ${lunarPhase} e hora planetária de ${planetaryHourRuler}. Para que seus caminhos fluam com a força de Maria Padilha, use a energia do seu elemento ${element} com sabedoria e honre os ritmos da Lua em suas decisões.`;
+  const hourText = planetaryHourRuler
+    ? `hora planetária natal de ${planetaryHourRuler}`
+    : 'hora planetária não calculada (hora de nascimento não informada)';
+
+  const cosmicAdvice = `Nascido(a) sob a força do Sol em ${sunSign} (Elemento ${element}, Modo ${modality}), com vibração natal da ${lunarPhase} e ${hourText}. Para que seus caminhos fluam com a força de Maria Padilha, use a energia do seu elemento ${element} com sabedoria e honre os ritmos da Lua em suas decisões.`;
 
   return {
     methodVersion: 'Astrologia-Horaria-Calc-v1',
@@ -111,6 +115,7 @@ export function calculateAstrology(birthDateStr: string, birthTimeStr?: string, 
     element,
     modality,
     planetaryHourRuler,
+    hourKnown,
     lunarPhase,
     lunarPhaseDescription,
     cosmicAdvice,

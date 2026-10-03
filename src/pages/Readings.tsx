@@ -137,7 +137,7 @@ export const Readings: React.FC = () => {
           userData: {
             fullName: user.fullName,
             birthDate: user.birthDate,
-            city: user.city,
+            birthTime: user.birthTime,
             timezone: user.timezone || 'America/Sao_Paulo'
           },
           specificName: hasSpecificPerson ? specificPersonName : undefined,
@@ -258,8 +258,8 @@ export const Readings: React.FC = () => {
                 <td>${escapeHtml(user?.birthDate || '')}</td>
               </tr>
               <tr>
-                <th>Cidade de Emissão</th>
-                <td>${escapeHtml(user?.city || 'Não especificada')}</td>
+                <th>Hora de Nascimento</th>
+                <td>${escapeHtml(user?.birthTime || 'Não informada')}</td>
                 <th>Vibração do Portal</th>
                 <td>Ativo</td>
               </tr>

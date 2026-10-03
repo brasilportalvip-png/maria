@@ -68,7 +68,7 @@ export default async function handler(req: Request, res: Response) {
 
   // 1. Check if readingId or idempotencyKey already exists (F5 or reload should NOT redraw cards!)
   if (readingId) {
-    const existing = await getOracleReadingById(readingId);
+    const existing = await getOracleReadingById(user.uid, readingId);
     if (existing) {
       return res.status(200).json({
         reading: existing.interpretationHtml,
@@ -77,12 +77,17 @@ export default async function handler(req: Request, res: Response) {
         aiUsed: existing.modelUsed !== 'offline-local-simulator',
         isCached: true,
       });
+    } else {
+      return res.status(404).json({
+        error: 'Consulta não encontrada ou acesso não autorizado.',
+        code: 'NOT_FOUND',
+      });
     }
   }
 
   const existingId = await getReadingIdByIdempotency(user.uid, idempotencyKey);
   if (existingId) {
-    const existing = await getOracleReadingById(existingId);
+    const existing = await getOracleReadingById(user.uid, existingId);
     if (existing) {
       return res.status(200).json({
         reading: existing.interpretationHtml,
@@ -136,8 +141,7 @@ export default async function handler(req: Request, res: Response) {
   const natalSnapshot: NatalData = {
     fullName: user.fullName || 'Consulente',
     birthDate: user.birthDate || '',
-    birthTime: user.birthTime || '',
-    city: user.city || '',
+    birthTime: user.birthTime || null,
     timezone: userTimezone,
   };
 
@@ -300,6 +304,7 @@ ${spiritualAI.systemContext}
     readingId: newReadingId,
     summary: `${type}: ${userQuestion}`,
     partnerName: specificName,
+    relationType: assignedRole,
   }).catch(() => {});
 
   return res.status(200).json({

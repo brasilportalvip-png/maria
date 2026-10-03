@@ -36,7 +36,7 @@ export const TermsOfService: React.FC = () => {
                 Aviso Importante sobre Conteúdo Espiritual e Oracular
               </h2>
               <p className="text-xs text-gray-300 leading-relaxed">
-                As consultas, jogos de tarot, conchas de búzios e diálogos oferecidos nesta plataforma constituem um serviço de orientação espiritual, simbólica e interpretativa.
+                As consultas, jogos de tarot, conchas de búzios e diálogos oferecidos nesta plataforma constituem um serviço de orientação espiritual e interpretativa.
                 Não garantem resultados absolutos, riqueza fácil, retorno amoroso garantido ou cura de enfermidades, e <strong>jamais substituem acompanhamento médico, psicológico, psiquiátrico, jurídico ou financeiro profissional</strong>.
               </p>
             </div>

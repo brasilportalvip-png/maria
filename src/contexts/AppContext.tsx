@@ -19,8 +19,7 @@ interface AppContextType {
     email: string;
     phone: string;
     birthDate: string;
-    birthTime?: string;
-    city: string;
+    birthTime?: string | null;
     password: string;
     timezone?: string;
   }) => Promise<UserProfile>;
@@ -30,7 +29,6 @@ interface AppContextType {
   getAuthToken: () => Promise<string>;
   apiFetch: (url: string, options?: RequestInit) => Promise<Response>;
   setUserCredits: (credits: number) => void;
-  spendCredits: (amount: number, type: string, title?: string, content?: any) => Promise<boolean>;
   addHistoryItem: (item: ReadingHistory) => void;
   addDiaryEntry: (title: string, content: string, category: DiaryEntry['category']) => Promise<void>;
   deleteDiaryEntry: (id: string) => Promise<void>;
@@ -148,8 +146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     email: string;
     phone: string;
     birthDate: string;
-    birthTime?: string;
-    city: string;
+    birthTime?: string | null;
     password: string;
     timezone?: string;
   }): Promise<UserProfile> => {
@@ -215,6 +212,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = async (): Promise<void> => {
+    if (user?.uid) {
+      try {
+        localStorage.removeItem(`mp_history_${user.uid}`);
+        localStorage.removeItem(`mp_diary_${user.uid}`);
+      } catch {}
+    }
     try {
       await signOut(auth);
     } catch (e) {
@@ -236,31 +239,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUser(updated);
   };
 
-  const spendCredits = async (amount: number, type: string, title?: string, content?: any): Promise<boolean> => {
-    if (!user || user.credits < amount) return false;
-    const newBal = user.credits - amount;
-    setUserCredits(newBal);
-
-    if (title) {
-      addHistoryItem({
-        id: `reading_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        userId: user.uid,
-        type,
-        title,
-        date: new Date().toISOString(),
-        content: content || {},
-        creditsUsed: amount,
-      });
-    }
-    return true;
-  };
-
   const addHistoryItem = (item: ReadingHistory) => {
     const nextHistory = [item, ...history];
     setHistory(nextHistory);
-    if (user) {
-      localStorage.setItem(`mp_history_${user.uid}`, JSON.stringify(nextHistory));
-    }
   };
 
   const addDiaryEntry = async (title: string, content: string, category: DiaryEntry['category']) => {
@@ -278,12 +259,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const nextDiary = [newEntry, ...diary];
     setDiary(nextDiary);
-    localStorage.setItem(`mp_diary_${user.uid}`, JSON.stringify(nextDiary));
 
     try {
       await setDoc(doc(db, 'diary', entryId), newEntry);
     } catch (e) {
-      console.warn('Could not sync diary to Firestore, stored locally:', e);
+      console.warn('Could not sync diary to Firestore:', e);
     }
   };
 
@@ -291,7 +271,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!user) return;
     const nextDiary = diary.filter((d) => d.id !== id);
     setDiary(nextDiary);
-    localStorage.setItem(`mp_diary_${user.uid}`, JSON.stringify(nextDiary));
 
     try {
       await deleteDoc(doc(db, 'diary', id));
@@ -314,7 +293,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getAuthToken,
         apiFetch,
         setUserCredits,
-        spendCredits,
         addHistoryItem,
         addDiaryEntry,
         deleteDiaryEntry,

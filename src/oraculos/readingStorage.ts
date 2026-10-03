@@ -49,9 +49,11 @@ export async function saveOracleReading(
   return record;
 }
 
-export async function getOracleReadingById(readingId: string): Promise<OracleReadingRecord | null> {
+export async function getOracleReadingById(uid: string, readingId: string): Promise<OracleReadingRecord | null> {
   if (process.env.NODE_ENV === 'test' && testReadingsCache.has(readingId)) {
-    return testReadingsCache.get(readingId)!;
+    const cached = testReadingsCache.get(readingId)!;
+    if (cached.uid !== uid) return null; // IDOR Protection
+    return cached;
   }
 
   if (!firestore) return null;
@@ -59,7 +61,11 @@ export async function getOracleReadingById(readingId: string): Promise<OracleRea
   try {
     const doc = await firestore.collection('readings').doc(readingId).get();
     if (doc.exists) {
-      return doc.data() as OracleReadingRecord;
+      const data = doc.data() as OracleReadingRecord;
+      if (data.uid !== uid) {
+        return null; // IDOR Protection: strictly verify ownership
+      }
+      return data;
     }
   } catch (err) {
     console.warn('[readingStorage] Warning: Failed to fetch reading from Firestore:', err);

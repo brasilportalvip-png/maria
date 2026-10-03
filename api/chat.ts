@@ -130,8 +130,7 @@ export default async function handler(req: Request, res: Response) {
   const natalData: NatalData = {
     fullName: user.fullName,
     birthDate: user.birthDate,
-    birthTime: user.birthTime,
-    city: user.city,
+    birthTime: user.birthTime || null,
     timezone: userTimezone,
   };
 
@@ -223,9 +222,10 @@ ${spiritualContext.systemContext}
 
     // If an oracle card was drawn, persist the reading record
     if (rawOracleResult?.tarotSpread) {
+      const chatReadingId = `read_chat_${crypto.randomUUID()}`;
       const readingRecord: OracleReadingRecord = {
-        id: `read_chat_${crypto.randomUUID()}`,
-        readingId: `read_chat_${crypto.randomUUID()}`,
+        id: chatReadingId,
+        readingId: chatReadingId,
         uid: user.uid,
         oracleType: 'tarot',
         question: message,
@@ -240,7 +240,7 @@ ${spiritualContext.systemContext}
         createdAt: new Date().toISOString(),
         timezone: userTimezone,
       };
-      await saveOracleReading(readingRecord);
+      await saveOracleReading(readingRecord, idempotencyKey);
     }
 
     recordSpiritualEvent({
