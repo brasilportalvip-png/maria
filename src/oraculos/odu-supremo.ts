@@ -406,7 +406,7 @@ conselho:
 'escute sua espiritualidade, mas mantenha os pés firmes na realidade.',
 
 alerta:
-'evite fugir da realidade através de fantasias ou ilusões.',
+'evite fugir da realidade através de devaneios ou ilusões.',
 
 orixas: ['Ọrúnmìlá', 'Obatalá', 'Ifá'],
 

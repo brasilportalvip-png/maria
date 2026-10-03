@@ -71,36 +71,55 @@ export function calculateAstrology(birthDateStr: string, birthTimeStr?: string |
   }
 
   // 3. Natal Moon Phase calculation (synodic cycle: 29.53058867 days, relative to 2000-01-06 18:14 UTC reference)
-  // Use noon of birth day only for astronomical date difference if hour unknown, preserving day-based cycle
+  // When hour is unknown, DO NOT invent 12:00 or any fictive time.
+  // Evaluate the calendar date boundary: if the phase transitions during the day and hour is unknown,
+  // clearly indicate the transition due to absence of birth time.
   const refTime = new Date('2000-01-06T18:14:00Z').getTime();
-  const birthTimeMs = new Date(year, month - 1, day, hourKnown && hour !== null ? hour : 12).getTime();
-  const diffDays = (birthTimeMs - refTime) / (1000 * 60 * 60 * 24);
   const synodicMonth = 29.53058867;
-  const phaseCycle = ((diffDays % synodicMonth) + synodicMonth) % synodicMonth;
 
-  let lunarPhase = 'Lua Nova';
-  let lunarPhaseDescription = 'Tempo de semeadura, introspecção e novos inícios.';
-  if (phaseCycle < 1.84) {
-    lunarPhase = 'Lua Nova';
-    lunarPhaseDescription = 'Momento sagrado de plantar sementes silenciosas e focar nos desejos essenciais.';
-  } else if (phaseCycle < 7.38) {
-    lunarPhase = 'Lua Crescente';
-    lunarPhaseDescription = 'Fase de expansão, força de vontade, coragem e superação dos primeiros obstáculos.';
-  } else if (phaseCycle < 11.07) {
-    lunarPhase = 'Quarto Crescente';
-    lunarPhaseDescription = 'Momento de decisão firme, alinhamento de compromissos e consolidação de planos.';
-  } else if (phaseCycle < 16.61) {
-    lunarPhase = 'Lua Cheia';
-    lunarPhaseDescription = 'Apogeu de luz e magnetismo, clareza total, fertilidade e realização de propósitos.';
-  } else if (phaseCycle < 22.15) {
-    lunarPhase = 'Lua Disseminadora / Minguante';
-    lunarPhaseDescription = 'Fase de colheita consciente, partilha de sabedoria e limpeza do que já não serve.';
-  } else if (phaseCycle < 25.84) {
-    lunarPhase = 'Quarto Minguante';
-    lunarPhaseDescription = 'Tempo de purificação profunda, corte de amarras e liberação de pesos espirituais.';
+  const getPhaseData = (cycleDays: number) => {
+    const cycle = ((cycleDays % synodicMonth) + synodicMonth) % synodicMonth;
+    if (cycle < 1.84) {
+      return { phase: 'Lua Nova', desc: 'Momento sagrado de plantar sementes silenciosas e focar nos desejos essenciais.' };
+    } else if (cycle < 7.38) {
+      return { phase: 'Lua Crescente', desc: 'Fase de expansão, força de vontade, coragem e superação dos primeiros obstáculos.' };
+    } else if (cycle < 11.07) {
+      return { phase: 'Quarto Crescente', desc: 'Momento de decisão firme, alinhamento de compromissos e consolidação de planos.' };
+    } else if (cycle < 16.61) {
+      return { phase: 'Lua Cheia', desc: 'Apogeu de luz e magnetismo, clareza total, fertilidade e realização de propósitos.' };
+    } else if (cycle < 22.15) {
+      return { phase: 'Lua Disseminadora / Minguante', desc: 'Fase de colheita consciente, partilha de sabedoria e limpeza do que já não serve.' };
+    } else if (cycle < 25.84) {
+      return { phase: 'Quarto Minguante', desc: 'Tempo de purificação profunda, corte de amarras e liberação de pesos espirituais.' };
+    } else {
+      return { phase: 'Lua Balsâmica', desc: 'Ciclo de renovação da alma, descanso sagrado e preparação para o novo ciclo.' };
+    }
+  };
+
+  let lunarPhase: string;
+  let lunarPhaseDescription: string;
+
+  if (hourKnown && hour !== null) {
+    // Exact birth hour provided
+    const exactBirthMs = new Date(year, month - 1, day, hour).getTime();
+    const diffDays = (exactBirthMs - refTime) / (1000 * 60 * 60 * 24);
+    const data = getPhaseData(diffDays);
+    lunarPhase = data.phase;
+    lunarPhaseDescription = data.desc;
   } else {
-    lunarPhase = 'Lua Balsâmica';
-    lunarPhaseDescription = 'Ciclo de renovação da alma, descanso sagrado e preparação para o novo ciclo.';
+    // Birth hour unknown: evaluate calendar day without assuming any specific hour
+    const startDiff = (new Date(year, month - 1, day, 0, 0, 0).getTime() - refTime) / (1000 * 60 * 60 * 24);
+    const endDiff = (new Date(year, month - 1, day, 23, 59, 59).getTime() - refTime) / (1000 * 60 * 60 * 24);
+    const startData = getPhaseData(startDiff);
+    const endData = getPhaseData(endDiff);
+
+    if (startData.phase === endData.phase) {
+      lunarPhase = startData.phase;
+      lunarPhaseDescription = `${startData.desc} (Fase constante ao longo de todo o dia de nascimento).`;
+    } else {
+      lunarPhase = `Transição Lunar (${startData.phase} para ${endData.phase})`;
+      lunarPhaseDescription = `No dia do seu nascimento a Lua transitou de ${startData.phase} para ${endData.phase}. Como o horário exato de nascimento não foi informado, a vibração lunar integra essa transição sagrada.`;
+    }
   }
 
   const hourText = planetaryHourRuler

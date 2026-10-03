@@ -17,7 +17,6 @@ describe('Perfil Espiritual Permanente e Sinastria Amorosa Sagrada', () => {
     phone: '11999998888',
     birthDate: '1990-05-15',
     birthTime: '14:30',
-    city: 'Salvador',
     timezone: 'America/Bahia',
     credits: 10,
     isBlocked: false,

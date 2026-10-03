@@ -362,7 +362,7 @@ export const Auth: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label htmlFor="reg_password_input" className="block text-[10px] font-semibold uppercase tracking-wider text-gray-300 mb-0.5">
-                  Senha (mínimo 6 dígitos)
+                  Senha (mínimo 8 caracteres)
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-500" />
@@ -373,6 +373,7 @@ export const Auth: React.FC = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full rounded-md border border-gray-800 bg-gray-950 pl-8 pr-10 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+                    minLength={8}
                     required
                   />
                   <button

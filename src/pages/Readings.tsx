@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
 import { motion } from 'motion/react';
@@ -10,6 +10,13 @@ import {
   READING_CONSULTATION_COST,
   INSUFFICIENT_CREDITS_MESSAGE,
 } from '../config/pricing';
+
+function generateClientUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `idemp_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+}
 
 function escapeHtml(str: string): string {
   return String(str || '')
@@ -50,6 +57,8 @@ export const Readings: React.FC = () => {
   const [specificPersonName, setSpecificPersonName] = useState('');
   const [specificPersonDate, setSpecificPersonDate] = useState('');
   const [specificPersonRelationship, setSpecificPersonRelationship] = useState('outro');
+
+  const idempotencyKeyRef = useRef<string>(generateClientUUID());
 
   // If viewing a history item, load it!
   useEffect(() => {
@@ -144,11 +153,15 @@ export const Readings: React.FC = () => {
           specificDate: hasSpecificPerson ? specificPersonDate : undefined,
           relationshipContext: hasSpecificPerson ? specificPersonRelationship : undefined,
           participantRelation: hasSpecificPerson ? specificPersonRelationship : undefined,
+          idempotencyKey: idempotencyKeyRef.current,
         })
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro na consulta do oráculo.');
+
+      // Refresh idempotency key for future new consultations
+      idempotencyKeyRef.current = generateClientUUID();
 
       if (typeof data.newCreditsBalance === 'number') {
         setUserCredits(data.newCreditsBalance);

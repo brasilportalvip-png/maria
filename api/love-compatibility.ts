@@ -131,7 +131,7 @@ export default async function handler(req: Request, res: Response) {
       uid: user.uid,
       amount: LOVE_COMPATIBILITY_COST,
       reason: 'Erro de cálculo natal na sinastria amorosa',
-      referenceId: readingId,
+      referenceId: debitResult.ledgerId,
     }).catch(() => {});
 
     return res.status(400).json({ error: calcErr.message || 'Erro ao processar mapas de compatibilidade.' });
@@ -192,12 +192,12 @@ DIRETRIZES FUNDAMENTAIS:
 
   // 7. If Gemini failed completely, issue automatic single refund
   if (!geminiResult.text || geminiResult.modelUsed === 'all_models_failed' || geminiResult.modelUsed === 'offline-local-simulator') {
-    logger.warn('AI interpretation failed for love compatibility, executing single refund of 5 credits', { uid: user.uid, readingId });
+    logger.warn('AI interpretation failed for love compatibility, executing single refund of 5 credits', { uid: user.uid, readingId, ledgerId: debitResult.ledgerId });
     const refundRes = await refundCredits({
       uid: user.uid,
       amount: LOVE_COMPATIBILITY_COST,
       reason: 'Oscilação técnica temporária na interpretação da sinastria — estorno automático integral',
-      referenceId: readingId,
+      referenceId: debitResult.ledgerId,
     }).catch(() => null);
 
     return res.status(502).json({
@@ -232,7 +232,23 @@ DIRETRIZES FUNDAMENTAIS:
     timezone: userTimezone,
   };
 
-  await saveOracleReading(readingRecord, idempotencyKey);
+  try {
+    await saveOracleReading(readingRecord, idempotencyKey);
+  } catch (saveErr) {
+    logger.error('Failed to save oracle reading for love compatibility, executing refund', saveErr, correlationId);
+    const refundRes = await refundCredits({
+      uid: user.uid,
+      amount: LOVE_COMPATIBILITY_COST,
+      reason: 'Falha técnica ao persistir leitura da sinastria — estorno automático integral',
+      referenceId: debitResult.ledgerId,
+    }).catch(() => null);
+
+    return res.status(500).json({
+      error: 'Não foi possível concluir o registro da sinastria amorosa. Seus créditos foram estornados integralmente.',
+      creditsRefunded: LOVE_COMPATIBILITY_COST,
+      newCreditsBalance: refundRes?.newBalance ?? user.credits,
+    });
+  }
 
   // 9. Record spiritual event with explicit romantic classification (Section 20 & 57)
   recordSpiritualEvent({

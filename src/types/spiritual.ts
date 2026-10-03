@@ -139,7 +139,6 @@ export interface UserProfile {
   phone: string;
   birthDate: string;
   birthTime?: string | null;
-  city?: string;
   timezone?: string;
   credits: number;
   isBlocked: boolean;

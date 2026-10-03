@@ -1,5 +1,5 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
 let firestoreInstance: any = null;
@@ -115,3 +115,4 @@ export function assertFirebaseAdminReady(): void {
 export const firestore = firestoreInstance || (isTestEnv ? (testMockFirestore as any) : null);
 export const adminAuth = adminAuthInstance || (isTestEnv ? (testMockAdminAuth as any) : null);
 export const isFirebaseAdminActive = Boolean(firestoreInstance && adminAuthInstance);
+export { FieldValue };

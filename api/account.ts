@@ -82,37 +82,19 @@ export default async function handler(req: Request, res: Response) {
         });
       }
 
-      // Anonymize user record irreversibly
-      await firestore.collection('users').doc(user.uid).set({
-        fullName: '[Conta Excluída pelo Titular - LGPD]',
-        email: `deleted_${user.uid}@anonymized.invalid`,
-        phone: '',
-        birthDate: '',
-        birthTime: '',
-        credits: 0,
-        isBlocked: true,
-        deletedAt: new Date().toISOString(),
-      }, { merge: true });
-
-      // Delete diary entries
+      // 1. Delete personal diary entries
       const diaryDocs = await firestore.collection('diary').where('userId', '==', user.uid).get();
       for (const d of diaryDocs.docs) {
         await d.ref.delete();
       }
 
-      // Delete readings to purge personal questions and natal data
+      // 2. Delete all oracle readings and interpretations to purge personal questions and natal data
       const readingsDocs = await firestore.collection('readings').where('uid', '==', user.uid).get();
       for (const r of readingsDocs.docs) {
         await r.ref.delete();
       }
 
-      // Anonymize payment orders (retaining financial records without personal identity)
-      const paymentDocs = await firestore.collection('payment_orders').where('uid', '==', user.uid).get();
-      for (const p of paymentDocs.docs) {
-        await p.ref.set({ userEmail: '[anonimizado@lgpd.invalid]' }, { merge: true });
-      }
-
-      // Delete spiritual profiles and living history
+      // 3. Delete spiritual profiles and living history
       try {
         await firestore.collection('spiritual_profiles').doc(user.uid).delete();
         await firestore.collection('spiritual_history').doc(user.uid).delete();
@@ -120,20 +102,43 @@ export default async function handler(req: Request, res: Response) {
         // ignore
       }
 
-      // If Admin SDK exists, delete auth user
+      // 4. True anonymization of tax/financial records (Art. 16, I e II da LGPD):
+      // Retain financial ledger entries strictly for tax compliance, but detach the user UID and PII irreversibly.
+      const paymentDocs = await firestore.collection('payment_orders').where('uid', '==', user.uid).get();
+      for (const p of paymentDocs.docs) {
+        await p.ref.set({
+          uid: '[TITULAR_EXCLUIDO_LGPD]',
+          userEmail: '[anonimizado@lgpd.invalid]',
+          anonymizedAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+
+      const ledgerDocs = await firestore.collection('credit_ledger').where('uid', '==', user.uid).get();
+      for (const l of ledgerDocs.docs) {
+        await l.ref.set({
+          uid: '[TITULAR_EXCLUIDO_LGPD]',
+          description: '[Registro Fiscal/Contábil Retido por Lei - Identidade Pessoal Excluída]',
+          metadata: {},
+        }, { merge: true });
+      }
+
+      // 5. Permanently delete user document from firestore
+      await firestore.collection('users').doc(user.uid).delete();
+
+      // 6. Delete authentication credential from Firebase Auth
       if (adminAuth && typeof adminAuth.deleteUser === 'function') {
         try {
           await adminAuth.deleteUser(user.uid);
         } catch (e) {
-          logger.warn('Failed to delete auth user, anonymized in database:', { uid: user.uid });
+          logger.warn('Failed to delete auth user from Firebase Auth:', { uid: user.uid });
         }
       }
 
-      logger.security('Account successfully deleted under LGPD', { uid: user.uid });
+      logger.security('Account and personal data permanently purged under LGPD (tax records detached of identity)', { uid: user.uid });
 
       return res.status(200).json({
         success: true,
-        message: 'Sua conta e seus dados pessoais de perfil e diário foram excluídos com sucesso. Registros contábeis e fiscais foram anonimizados conforme exigido por lei.',
+        message: 'Sua conta, histórico de consultas, diário e dados de identificação foram excluídos permanentemente. Registros fiscais foram desvinculados de sua identidade e anonimizados conforme exigência legal.',
       });
     }
 

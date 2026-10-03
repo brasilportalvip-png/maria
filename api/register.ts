@@ -4,6 +4,7 @@ import { RegisterRequestSchema } from './validation/schemas.js';
 import { getClientIp } from './middleware/auth.js';
 import { checkRateLimit } from './services/rateLimiter.js';
 import { logger } from './services/logger.js';
+import { parseAndValidateDate } from '../src/utils/dateNormalizer.js';
 import type { UserProfile, CreditLedgerEntry } from '../src/types/spiritual.js';
 
 export default async function handler(req: Request, res: Response) {
@@ -32,6 +33,18 @@ export default async function handler(req: Request, res: Response) {
 
   const data = parseResult.data;
   const normalizedEmail = data.email.toLowerCase().trim();
+
+  // Validate strict calendar existence and normalize to canonical YYYY-MM-DD
+  let canonicalBirthDate: string;
+  try {
+    const validDate = parseAndValidateDate(data.birthDate);
+    canonicalBirthDate = validDate.isoDate;
+  } catch (dateErr: any) {
+    return res.status(400).json({
+      error: dateErr.message || 'Data de nascimento impossível ou inválida.',
+      code: 'INVALID_BIRTH_DATE',
+    });
+  }
 
   try {
     // Check if email already registered in firestore
@@ -82,7 +95,7 @@ export default async function handler(req: Request, res: Response) {
       fullName: data.fullName,
       email: normalizedEmail,
       phone: data.phone,
-      birthDate: data.birthDate,
+      birthDate: canonicalBirthDate,
       birthTime: data.birthTime || null,
       timezone: data.timezone || 'America/Sao_Paulo',
       credits: INITIAL_CREDITS,
