@@ -33,20 +33,9 @@ export const OracleReadingRequestSchema = z.object({
   }).optional(),
   specificName: z.string().max(150).optional(),
   specificDate: z.string().regex(dateRegex, 'Data de nascimento da pessoa inválida').optional().or(z.literal('')),
-  participantRelation: z.enum([
-    'não informado',
-    'amor',
-    'ex',
-    'cônjuge',
-    'família',
-    'amizade',
-    'sociedade',
-    'trabalho',
-    'chefe',
-    'funcionário',
-    'cliente',
-    'outro'
-  ]).optional(),
+  participantRelation: z.string().max(100).optional(),
+  relationshipContext: z.string().max(100).optional(),
+  participantRole: z.string().max(100).optional(),
   idempotencyKey: z.string().max(100).optional(),
   readingId: z.string().max(100).optional(),
 });

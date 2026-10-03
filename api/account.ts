@@ -39,6 +39,14 @@ export default async function handler(req: Request, res: Response) {
         };
       });
 
+      let spiritualProfile = null;
+      try {
+        const sDoc = await firestore.collection('spiritual_profiles').doc(user.uid).get();
+        if (sDoc.exists) spiritualProfile = sDoc.data();
+      } catch {
+        // ignore
+      }
+
       return res.status(200).json({
         userProfile: {
           fullName: user.fullName,
@@ -49,6 +57,7 @@ export default async function handler(req: Request, res: Response) {
           credits: user.credits,
           createdAt: user.createdAt,
         },
+        spiritualProfile,
         readings,
         creditLedger: ledger,
         diaryEntries: diary,
@@ -82,6 +91,14 @@ export default async function handler(req: Request, res: Response) {
       const diaryDocs = await firestore.collection('diary').where('userId', '==', user.uid).get();
       for (const d of diaryDocs.docs) {
         await d.ref.delete();
+      }
+
+      // Delete spiritual profiles and living history
+      try {
+        await firestore.collection('spiritual_profiles').doc(user.uid).delete();
+        await firestore.collection('spiritual_history').doc(user.uid).delete();
+      } catch {
+        // ignore
       }
 
       // If Admin SDK exists, delete auth user

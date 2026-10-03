@@ -13,7 +13,8 @@ const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST)
 export async function checkRateLimit(
   identifier: string,
   limit: number = 30,
-  windowMs: number = 60 * 1000
+  windowMs: number = 60 * 1000,
+  failClosed: boolean = false
 ): Promise<{ allowed: boolean; remaining: number; resetInMs: number }> {
   const now = Date.now();
 
@@ -76,8 +77,12 @@ export async function checkRateLimit(
 
     return { allowed, remaining, resetInMs };
   } catch (e) {
-    // Fail-open for transient network errors to not block legitimate users
-    console.warn('[RateLimiter] Distributed rate limit check failed, failing open:', e);
+    if (failClosed) {
+      console.error('[RateLimiter] Distributed rate limit check failed, failing closed for sensitive endpoint:', e);
+      return { allowed: false, remaining: 0, resetInMs: windowMs };
+    }
+    // Fail-open for general reading queries
+    console.warn('[RateLimiter] Distributed rate limit check failed, failing open for general query:', e);
     return { allowed: true, remaining: 1, resetInMs: windowMs };
   }
 }

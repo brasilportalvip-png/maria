@@ -11,6 +11,26 @@ import {
   INSUFFICIENT_CREDITS_MESSAGE,
 } from '../config/pricing';
 
+function escapeHtml(str: string): string {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function sanitizeHtmlForPrint(html: string): string {
+  return String(html || '')
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+    .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
+    .replace(/\son\w+\s*=\s*(["']).*?\1/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+    .replace(/javascript:/gi, 'blocked:');
+}
+
 export const Readings: React.FC = () => {
   const { user, history, apiFetch, setUserCredits, addHistoryItem } = useApp();
   const navigate = useNavigate();
@@ -21,6 +41,9 @@ export const Readings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [readingResult, setReadingResult] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Question / Context for the oracle
+  const [question, setQuestion] = useState('');
 
   // Fields for a specific person involved in the query
   const [hasSpecificPerson, setHasSpecificPerson] = useState(false);
@@ -110,6 +133,7 @@ export const Readings: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({
           type,
+          question: question.trim() || undefined,
           userData: {
             fullName: user.fullName,
             birthDate: user.birthDate,
@@ -117,7 +141,9 @@ export const Readings: React.FC = () => {
             timezone: user.timezone || 'America/Sao_Paulo'
           },
           specificName: hasSpecificPerson ? specificPersonName : undefined,
-          specificDate: hasSpecificPerson ? specificPersonDate : undefined
+          specificDate: hasSpecificPerson ? specificPersonDate : undefined,
+          relationshipContext: hasSpecificPerson ? specificPersonRelationship : undefined,
+          participantRelation: hasSpecificPerson ? specificPersonRelationship : undefined,
         })
       });
 
@@ -216,7 +242,7 @@ export const Readings: React.FC = () => {
             <h2>Maria Padilha Rainha das 7 Encruzilhadas</h2>
             <p>Relatório de Orientação, Oráculos e Autoconhecimento</p>
             <div style="margin-top: 60px; font-size: 13px;">
-              <p>Consulente: <strong>${user?.fullName}</strong></p>
+              <p>Consulente: <strong>${escapeHtml(user?.fullName || 'Consulente')}</strong></p>
               <p>Data de Emissão: <strong>${new Date().toLocaleDateString('pt-BR')}</strong></p>
               <p>Código de Autenticação Espiritual: <strong>MP-${Math.floor(100000 + Math.random() * 900000)}</strong></p>
             </div>
@@ -227,29 +253,29 @@ export const Readings: React.FC = () => {
             <table class="metadata-table">
               <tr>
                 <th>Nome Completo</th>
-                <td>${user?.fullName}</td>
+                <td>${escapeHtml(user?.fullName || '')}</td>
                 <th>Data de Nascimento</th>
-                <td>${user?.birthDate}</td>
+                <td>${escapeHtml(user?.birthDate || '')}</td>
               </tr>
               <tr>
                 <th>Cidade de Emissão</th>
-                <td>${user?.city || 'Não especificada'}</td>
+                <td>${escapeHtml(user?.city || 'Não especificada')}</td>
                 <th>Vibração do Portal</th>
                 <td>Ativo</td>
               </tr>
               ${hasSpecificPerson ? `
               <tr>
                 <th>Pessoa Consultada</th>
-                <td>${specificPersonName}</td>
+                <td>${escapeHtml(specificPersonName)}</td>
                 <th>Nascimento Pessoa</th>
-                <td>${specificPersonDate || 'Não informada'}</td>
+                <td>${escapeHtml(specificPersonDate || 'Não informada')}</td>
               </tr>
               ` : ''}
             </table>
 
-            <h3>${activeTitle.toUpperCase()}</h3>
+            <h3>${escapeHtml(activeTitle.toUpperCase())}</h3>
             <div style="margin-top: 20px;">
-              ${readingResult}
+              ${sanitizeHtmlForPrint(readingResult || '')}
             </div>
 
             <div class="footer">
@@ -380,6 +406,22 @@ export const Readings: React.FC = () => {
             <p className="text-xs md:text-sm text-gray-300 max-w-xl mx-auto mt-2">
               Escolha uma consulta comum ou acesse a imensa Consulta Premium para receber um dossiê espiritual completo sobre sua jornada terrena.
             </p>
+          </div>
+
+          {/* Question / Context Input */}
+          <div className="mb-6 max-w-xl mx-auto rounded-xl border border-gray-800 bg-black/60 p-4">
+            <label className="block text-xs font-bold text-gray-200 mb-1 flex items-center justify-between">
+              <span>Sua Pergunta ou Situação para o Oráculo (Opcional)</span>
+              <span className="text-[10px] text-gray-400 font-normal">Ex: Sociedade, trabalho, amor ou caminhos</span>
+            </label>
+            <input
+              id="oracle_question_input"
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="Ex: Como ficará minha sociedade com Carlos? Ou deixe em branco para consulta geral."
+              className="w-full rounded-md border border-gray-800 bg-gray-950 px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-[#D4AF37] focus:outline-none"
+            />
           </div>
 
           {/* Specific Person Involved in Query */}

@@ -13,7 +13,7 @@ import { calculateAstrology } from '../src/oraculos/astrologyEngine.js';
 import { saveOracleReading, getOracleReadingById, getReadingIdByIdempotency } from '../src/oraculos/readingStorage.js';
 import { checkRateLimit } from './services/rateLimiter.js';
 import { logger } from './services/logger.js';
-import type { OracleReadingRecord, OracleRawResult, NatalData } from '../src/types/spiritual.js';
+import type { OracleReadingRecord, OracleRawResult, NatalData, ParticipantRole } from '../src/types/spiritual.js';
 import {
   READING_CONSULTATION_COST,
   INSUFFICIENT_CREDITS_MESSAGE,
@@ -54,7 +54,17 @@ export default async function handler(req: Request, res: Response) {
     });
   }
 
-  const { type, question, specificName, specificDate, idempotencyKey, readingId } = parseResult.data;
+  const {
+    type,
+    question,
+    specificName,
+    specificDate,
+    relationshipContext,
+    participantRelation,
+    participantRole,
+    idempotencyKey,
+    readingId,
+  } = parseResult.data;
 
   // 1. Check if readingId or idempotencyKey already exists (F5 or reload should NOT redraw cards!)
   if (readingId) {
@@ -119,7 +129,7 @@ export default async function handler(req: Request, res: Response) {
   // 3. Prepare Context & Real Oracle Execution
   const userTimezone = user.timezone || 'America/Sao_Paulo';
   const temporal = getTemporalContext(userTimezone);
-  const userQuestion = question || `Consulta aos oráculos sagrados na modalidade ${type}`;
+  const userQuestion = question?.trim() || `Consulta geral aos oráculos sagrados na modalidade ${type}`;
   const intent = classifyIntent(userQuestion, userTimezone);
 
   // Authoritative consulente natal data from database ONLY (client cannot override)
@@ -131,17 +141,43 @@ export default async function handler(req: Request, res: Response) {
     timezone: userTimezone,
   };
 
-  // Distinct participant structure for third parties (does not mutate consulente natal record)
+  // Explicit mapping of relationship context — NEVER assume "parceiro_amoroso" if declared business/family/work
+  let assignedRole: ParticipantRole = 'outro';
+  let assignedContext = 'consulta';
+
   if (specificName) {
+    const rawRel = (relationshipContext || participantRelation || participantRole || '').toLowerCase().trim();
+    if (rawRel === 'sociedade' || rawRel === 'socio') {
+      assignedRole = 'socio';
+      assignedContext = 'sociedade';
+    } else if (['trabalho', 'chefe', 'funcionario', 'cliente'].includes(rawRel)) {
+      assignedRole = rawRel === 'chefe' ? 'chefe' : rawRel === 'funcionario' ? 'funcionario' : 'outro';
+      assignedContext = 'trabalho';
+    } else if (rawRel === 'familia' || rawRel === 'familiar') {
+      assignedRole = 'familiar';
+      assignedContext = 'familia';
+    } else if (rawRel === 'amizade' || rawRel === 'amigo') {
+      assignedRole = 'amigo';
+      assignedContext = 'amizade';
+    } else if (['amor', 'ex', 'conjuge', 'namorado', 'namorada', 'parceiro_amoroso'].includes(rawRel)) {
+      assignedRole = rawRel === 'ex' ? 'ex' : 'parceiro_amoroso';
+      assignedContext = 'amor';
+    } else if (intent.isRomantic) {
+      assignedRole = 'parceiro_amoroso';
+      assignedContext = 'amor';
+    }
+
     const existingParticipant = intent.participants.find((p) => p.name.toLowerCase() === specificName.toLowerCase());
     if (existingParticipant) {
       if (specificDate && !existingParticipant.birthDate) existingParticipant.birthDate = specificDate;
+      existingParticipant.role = assignedRole;
+      existingParticipant.relationshipContext = assignedContext;
     } else {
       intent.participants.push({
         name: specificName,
         birthDate: specificDate,
-        role: intent.isRomantic ? 'parceiro_amoroso' : 'outro',
-        relationshipContext: intent.isRomantic ? 'amor' : 'consulta',
+        role: assignedRole,
+        relationshipContext: assignedContext,
       });
     }
   }
@@ -186,7 +222,12 @@ export default async function handler(req: Request, res: Response) {
     user,
     question: userQuestion,
     rawOracleResult: rawResult,
-    partnerData: specificName ? { name: specificName, birthDate: specificDate } : undefined,
+    partnerData: specificName ? {
+      name: specificName,
+      birthDate: specificDate,
+      role: assignedRole,
+      relationshipContext: assignedContext,
+    } : undefined,
   });
 
   // 5. Gemini Interpretation of the REAL Oracle Result

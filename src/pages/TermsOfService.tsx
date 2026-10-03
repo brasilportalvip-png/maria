@@ -54,7 +54,8 @@ export const TermsOfService: React.FC = () => {
             <ul className="list-disc pl-5 space-y-1">
               <li>Cada pergunta ou consulta oracular paga (Chat com Maria Padilha, Tarot, Jogo de Búzios, Odù Ifá, Numerologia, Cabala, Astrologia, conselho de Pombo Gira ou Compatibilidade Amorosa) consome exatamente 5 créditos. Mensagens de simples atendimento, saudação ou suporte não consom créditos (0 créditos).</li>
               <li>A aquisição de créditos é realizada através de pacotes pré-pagos seguros processados pelo Mercado Pago.</li>
-              <li>Em caso de falha técnica comprovada no servidor ou indisponibilidade da IA durante uma consulta, o sistema efetua o estorno automático integral dos 5 créditos debitados naquela transação.</li>
+              <li>No chat interativo com Maria Padilha, caso a inteligência artificial sofra falha técnica total e não possa responder, o sistema efetua o estorno automático integral dos 5 créditos debitados.</li>
+              <li>Nas consultas oraculares completas, o sistema executa e persiste primeiramente o sorteio sagrado real (cartas, conchas ou cálculos herméticos). Em caso de oscilação transitória na conexão com o modelo de IA, o sistema ativa imediatamente a interpretação canônica estruturada derivada diretamente do jogo sorteado. Caso ocorra falha crítica sem resultado utilizável, os créditos são integralmente estornados.</li>
             </ul>
           </section>
 

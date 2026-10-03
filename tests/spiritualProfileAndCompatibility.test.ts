@@ -126,4 +126,23 @@ describe('Perfil Espiritual Permanente e Sinastria Amorosa Sagrada', () => {
     expect(ctx.permanentProfile.numerology.lifePath).toBeGreaterThan(0);
     expect(ctx.temporal.greeting).toBeTruthy();
   });
+
+  it('não deve classificar sócio como parceiro amoroso em assembleSpiritualAIContext', async () => {
+    const ctx = await assembleSpiritualAIContext({
+      user: dummyUser,
+      question: 'Estou abrindo uma sociedade com Roberto 02/02/1983. Teremos sucesso?',
+      partnerData: {
+        name: 'Roberto',
+        birthDate: '1983-02-02',
+        role: 'socio',
+        relationshipContext: 'sociedade',
+      },
+    });
+
+    expect(ctx.systemContext).toContain('Roberto');
+    expect(ctx.systemContext).toContain('Papel / Contexto da Relação: socio');
+    expect(ctx.systemContext).not.toContain('Papel / Contexto da Relação: parceiro_amoroso');
+    // Consulente natal profile remains immutable
+    expect(ctx.permanentProfile.uid).toBe(dummyUser.uid);
+  });
 });

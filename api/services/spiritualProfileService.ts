@@ -78,13 +78,13 @@ function deriveArchetypesAndKarmicPatterns(
   ];
 
   const reincarnationThemes = [
-    `Resgate de compromissos kármicos assumidos sob a égide de ${astrology.rulingPlanet}.`,
+    `Resgate de compromissos kármicos assumidos sob a égide de ${astrology.planetaryHourRuler}.`,
     `Transformação de antigas mágoas em autoridade e liderança espiritual compassiva.`,
     `Alinhamento das escolhas materiais com o propósito primordial da alma.`,
   ];
 
   const personalityPatterns = [
-    `Inteligência perceptiva aguçada sob o regente ${astrology.rulingPlanet}.`,
+    `Inteligência perceptiva aguçada sob o regente cósmico ${astrology.planetaryHourRuler}.`,
     `Sensibilidade às vibrações do ambiente e forte ligação com a ancestralidade.`,
     `Resistência perseverante diante de obstáculos que desanimam pessoas comuns.`,
   ];
@@ -208,10 +208,10 @@ export async function getOrCreateSpiritualProfile(user: UserProfile): Promise<Pe
     astrology: {
       sunSign: astrology.sunSign,
       element: astrology.element,
-      rulingPlanet: astrology.rulingPlanet,
+      rulingPlanet: astrology.planetaryHourRuler,
       lunarPhase: astrology.lunarPhase,
-      planetaryHour: astrology.planetaryHour,
-      astrologicalGuidance: astrology.astrologicalGuidance,
+      planetaryHour: astrology.planetaryHourRuler,
+      astrologicalGuidance: astrology.cosmicAdvice,
     },
     karmicPatterns: {
       karmicLessons: derived.recurrentLessons,
@@ -220,7 +220,7 @@ export async function getOrCreateSpiritualProfile(user: UserProfile): Promise<Pe
     },
     spiritualCycles: {
       personalYear: (numerology as any).personalYear || 1,
-      cycleTheme: `Ano Pessoal ${(numerology as any).personalYear || 1} regido pela energia de ${astrology.rulingPlanet}`,
+      cycleTheme: `Ano Pessoal ${(numerology as any).personalYear || 1} regido pela energia de ${astrology.planetaryHourRuler}`,
       spiritualPhase: `Ciclo de ${cabala.sephirahName}`,
     },
     archetypes: {
@@ -368,7 +368,7 @@ export async function assembleSpiritualAIContext(params: {
   user: UserProfile;
   question: string;
   rawOracleResult?: any;
-  partnerData?: { name: string; birthDate?: string; role?: string };
+  partnerData?: { name: string; birthDate?: string; role?: string; relationshipContext?: string };
 }): Promise<{
   systemContext: string;
   permanentProfile: PermanentSpiritualProfile;
@@ -399,9 +399,9 @@ export async function assembleSpiritualAIContext(params: {
 --- DADOS E PERFIL ESPIRITUAL DA PESSOA ENVOLVIDA ---
 Nome: ${partnerData.name}
 ${partnerData.birthDate ? `Nascimento: ${partnerData.birthDate}` : 'Nascimento não informado (análise por vibração onomástica)'}
-Papel na vida do consulente: ${partnerData.role || 'parceiro_amoroso'}
+Papel / Contexto da Relação: ${partnerData.role || partnerData.relationshipContext || 'outro'}
 ${pNumerology ? `Caminho de Vida (Destino): ${pNumerology.lifePathNumber} | Expressão: ${pNumerology.expressionNumber}` : ''}
-${pAstrology ? `Signo Solar: ${pAstrology.sunSign} | Elemento: ${pAstrology.element} | Regente: ${pAstrology.rulingPlanet}` : ''}
+${pAstrology ? `Signo Solar: ${pAstrology.sunSign} | Elemento: ${pAstrology.element} | Regente: ${pAstrology.planetaryHourRuler}` : ''}
 ${pCabala ? `Sefira Regente: ${pCabala.sephirahName} | Arcanjo: ${pCabala.rulingArchangel}` : ''}
 `;
   }
@@ -434,7 +434,7 @@ Sombra / Alerta Espiritual: ${rawOracleResult.buzios.oduShadow}
 === CONTEXTO ESPIRITUAL PROFUNDO DO CONSULENTE ===
 Nome: ${user.fullName}
 Nascimento: ${user.birthDate}${user.birthTime ? ` às ${user.birthTime}` : ''} (${user.city || 'Brasil'})
-Data e Hora da Consulta: ${temporal.nowDateISO} (${temporal.dayOfWeek}, ${temporal.hourOfDay}h — Fuso: ${userTimezone})
+Data e Hora da Consulta: ${temporal.referenceIso} (${temporal.userDayOfWeek}, ${temporal.userFormattedTime} — Fuso: ${userTimezone})
 Ciclo Temporal Astral: ${temporal.periodOfDay} | Saudação: ${temporal.greeting}
 Intenção Principal Detectada: ${intent.primaryCategory.toUpperCase()} (${intent.summary})
 
